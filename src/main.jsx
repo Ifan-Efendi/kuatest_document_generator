@@ -178,6 +178,7 @@ function Icon({ name }) {
     eye: <><path d="M2.5 12s3.2-6 9.5-6 9.5 6 9.5 6-3.2 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
     edit: <><path d="m4 16.8-.8 4 4-.8L19 8.2a2.1 2.1 0 0 0-3-3Z"/><path d="m14.5 6.7 3 3"/></>,
     download: <><path d="M12 3.5v12m0 0 4-4m-4 4-4-4M4.5 20h15"/></>,
+    loading: <><circle cx="12" cy="12" r="9" opacity=".25"/><path d="M21 12a9 9 0 0 0-9-9"/></>,
     close: <><path d="m6 6 12 12M18 6 6 18"/></>,
     trash: <><path d="M4.5 7h15M9 7V4.5h6V7m2 0-.7 13H7.7L7 7m3.5 3v6m3-6v6"/></>,
     arrow: <><path d="M4 12h15m-6-6 6 6-6 6"/></>,
@@ -198,6 +199,8 @@ function App() {
   const [settingsForm, setSettingsForm] = useState(defaultCompany)
   const [ready, setReady] = useState(false)
   const [message, setMessage] = useState('')
+  const [downloadingPdf, setDownloadingPdf] = useState(null)
+  const [viewingPdf, setViewingPdf] = useState(null)
 
   const refresh = async () => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
@@ -338,14 +341,44 @@ function App() {
   }
   const openReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
-    if (!invoice) return setMessage('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
+    if (!invoice) throw new Error('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
     const fileName = pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName)
     await downloadPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, fileName)
   }
+  const downloadRecordPdf = async (record) => {
+    if (downloadingPdf || viewingPdf) return
+    const key = `${page}:${record.id}`
+    setDownloadingPdf(key)
+    setMessage('Menyiapkan PDF untuk diunduh…')
+    try {
+      if (page === 'receipt') await openReceiptPdf(record)
+      else await openDocumentPdf(record)
+      setMessage('PDF siap diunduh.')
+    } catch (error) {
+      setMessage(error.message || 'PDF gagal dibuat. Coba lagi.')
+    } finally {
+      setDownloadingPdf(null)
+    }
+  }
+  const viewRecordPdf = async (record) => {
+    if (downloadingPdf || viewingPdf) return
+    const key = `${page}:${record.id}`
+    setViewingPdf(key)
+    setMessage('Menyiapkan PDF untuk ditampilkan…')
+    try {
+      if (page === 'receipt') await previewReceiptPdf(record)
+      else await previewDocumentPdf(record)
+      setMessage('PDF siap ditampilkan.')
+    } catch (error) {
+      setMessage(error.message || 'PDF gagal dibuka. Coba lagi.')
+    } finally {
+      setViewingPdf(null)
+    }
+  }
   const previewReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
-    if (!invoice) return setMessage('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
+    if (!invoice) throw new Error('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
     const popup = window.open('', '_blank')
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
     await previewPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName), popup)
@@ -429,6 +462,10 @@ function App() {
           <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}<th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{filtered.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
+              const pdfKey = `${page}:${record.id}`
+              const isViewingPdf = viewingPdf === pdfKey
+              const isDownloadingPdf = downloadingPdf === pdfKey
+              const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
               return <tr key={record.id}>
                 <td className="number-cell">{record.number}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>
                 {page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
@@ -437,8 +474,8 @@ function App() {
                   {(page === 'quotation' ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'] : ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']).map((status) => <option key={status}>{status}</option>)}
                 </select></td>}
                 <td><div className="row-actions">
-                  <button className="icon-button" title="Preview PDF" onClick={() => page === 'receipt' ? previewReceiptPdf(record) : previewDocumentPdf(record)}><Icon name="eye"/></button>
-                  <button className="icon-button" title="Unduh PDF" onClick={() => page === 'receipt' ? openReceiptPdf(record) : openDocumentPdf(record)}><Icon name="download"/></button>
+                  <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF…' : 'View PDF'} aria-label={isViewingPdf ? 'Menyiapkan PDF untuk ditampilkan' : 'View PDF'} disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
+                  <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Menyiapkan PDF…' : 'Unduh PDF'} aria-label={isDownloadingPdf ? 'Menyiapkan PDF' : 'Unduh PDF'} disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
                   <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
                   {page === 'quotation' && <button className="icon-button" title="Buat invoice dari penawaran" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>}
                   {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}

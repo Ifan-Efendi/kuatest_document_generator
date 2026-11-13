@@ -262,8 +262,7 @@ async function renderPdf(payload, fileName) {
 export async function previewPdf(payload, fileName, reservedWindow = null) {
   const popup = reservedWindow || window.open('', '_blank')
   if (!popup) {
-    window.alert('Izinkan pop-up untuk melihat PDF.')
-    return
+    throw new Error('Izinkan pop-up di browser untuk melihat PDF.')
   }
   try {
     const file = await renderPdf(payload, fileName)
@@ -272,23 +271,19 @@ export async function previewPdf(payload, fileName, reservedWindow = null) {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (error) {
     popup.close()
-    window.alert(error.message || 'PDF gagal dibuat.')
+    throw error
   }
 }
 
 export async function downloadPdf(payload, fileName) {
-  try {
-    const file = await renderPdf(payload, fileName)
-    const url = URL.createObjectURL(file)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.hidden = true
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  } catch (error) {
-    window.alert(error.message || 'PDF gagal dibuat.')
-  }
+  const file = await renderPdf(payload, fileName)
+  const url = URL.createObjectURL(file)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.hidden = true
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
