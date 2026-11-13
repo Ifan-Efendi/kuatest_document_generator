@@ -25,16 +25,23 @@ export default async function handler(request, response) {
   if (!pdfPayloadHtml(payload)) return response.status(400).json({ error: 'Data dokumen tidak lengkap.' })
 
   try {
-    const pdf = await renderPdfPayload(payload, {
+    const renderedPdf = await renderPdfPayload(payload, {
       args: chromium.args,
       executablePath: await chromium.executablePath(),
       headless: 'shell',
     })
+    // Puppeteer returns a Uint8Array. Normalize it to Buffer so Vercel sends
+    // the PDF bytes as-is instead of serializing the typed array as JSON.
+    const pdf = Buffer.from(renderedPdf)
+    if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      throw new Error('PDF renderer returned invalid data.')
+    }
     response.setHeader('Content-Type', 'application/pdf')
-    response.setHeader('Content-Length', pdf.length)
+    response.setHeader('Content-Length', pdf.byteLength)
     response.setHeader('Content-Disposition', `attachment; filename="${sanitizePdfFileName(payload.fileName)}"`)
     response.setHeader('Cache-Control', 'no-store')
-    return response.status(200).send(pdf)
+    response.statusCode = 200
+    return response.end(pdf)
   } catch {
     return response.status(500).json({ error: 'PDF gagal dibuat. Coba lagi.' })
   }
