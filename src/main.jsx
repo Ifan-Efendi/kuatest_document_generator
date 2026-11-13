@@ -492,7 +492,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
             return { ...state, date: nextDate }
           })} /></Field>
           {document.type === 'invoice' && <Field label="Jatuh tempo"><input type="date" value={document.dueDate || ''} onChange={(event) => set('dueDate', event.target.value)} /></Field>}
-          <Field label="Nama penerima"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
+          <Field label="Kepada"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
           <Field label="Perusahaan" required><input required value={document.companyName} onChange={(event) => set('companyName', event.target.value)} /></Field>
           <Field label="Telepon / Fax"><input value={document.phone} onChange={(event) => set('phone', event.target.value)} /></Field>
           <Field label="E-mail"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
