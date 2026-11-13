@@ -201,6 +201,7 @@ function App() {
   const [message, setMessage] = useState('')
   const [downloadingPdf, setDownloadingPdf] = useState(null)
   const [viewingPdf, setViewingPdf] = useState(null)
+  const [pendingPreview, setPendingPreview] = useState(null)
 
   const refresh = async () => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
@@ -335,9 +336,8 @@ function App() {
     await downloadPdf({ kind: 'document', document, company: pdfCompany }, fileName)
   }
   const previewDocumentPdf = async (document) => {
-    const popup = window.open('', '_blank')
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
-    await previewPdf({ kind: 'document', document, company: pdfCompany }, pdfFileName(document.type, document.number, document.companyName), popup)
+    return previewPdf({ kind: 'document', document, company: pdfCompany }, pdfFileName(document.type, document.number, document.companyName))
   }
   const openReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
@@ -350,11 +350,11 @@ function App() {
     if (downloadingPdf || viewingPdf) return
     const key = `${page}:${record.id}`
     setDownloadingPdf(key)
-    setMessage('Menyiapkan PDF untuk diunduh…')
+    setMessage('Mengunduh PDF…')
     try {
       if (page === 'receipt') await openReceiptPdf(record)
       else await openDocumentPdf(record)
-      setMessage('PDF siap diunduh.')
+      setMessage('PDF berhasil diunduh.')
     } catch (error) {
       setMessage(error.message || 'PDF gagal dibuat. Coba lagi.')
     } finally {
@@ -364,12 +364,27 @@ function App() {
   const viewRecordPdf = async (record) => {
     if (downloadingPdf || viewingPdf) return
     const key = `${page}:${record.id}`
+    if (pendingPreview?.key === key) {
+      openPendingPdf()
+      return
+    }
+    if (pendingPreview) {
+      URL.revokeObjectURL(pendingPreview.url)
+      setPendingPreview(null)
+    }
     setViewingPdf(key)
     setMessage('Menyiapkan PDF untuk ditampilkan…')
     try {
-      if (page === 'receipt') await previewReceiptPdf(record)
-      else await previewDocumentPdf(record)
-      setMessage('PDF siap ditampilkan.')
+      const url = page === 'receipt' ? await previewReceiptPdf(record) : await previewDocumentPdf(record)
+      const tab = window.open(url, '_blank')
+      if (tab) {
+        tab.opener = null
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+        setMessage('PDF siap ditampilkan.')
+      } else {
+        setPendingPreview({ key, url })
+        setMessage('PDF siap. Klik Buka PDF untuk menampilkannya.')
+      }
     } catch (error) {
       setMessage(error.message || 'PDF gagal dibuka. Coba lagi.')
     } finally {
@@ -379,9 +394,21 @@ function App() {
   const previewReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
     if (!invoice) throw new Error('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
-    const popup = window.open('', '_blank')
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
-    await previewPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName), popup)
+    return previewPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName))
+  }
+
+  const openPendingPdf = () => {
+    if (!pendingPreview) return
+    const tab = window.open(pendingPreview.url, '_blank')
+    if (!tab) {
+      setMessage('Pop-up diblokir. Izinkan pop-up untuk menampilkan PDF.')
+      return
+    }
+    tab.opener = null
+    window.setTimeout(() => URL.revokeObjectURL(pendingPreview.url), 60_000)
+    setPendingPreview(null)
+    setMessage('PDF siap ditampilkan.')
   }
 
   const createInvoiceFrom = async (quotation) => {
@@ -475,7 +502,7 @@ function App() {
                 </select></td>}
                 <td><div className="row-actions">
                   <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF…' : 'View PDF'} aria-label={isViewingPdf ? 'Menyiapkan PDF untuk ditampilkan' : 'View PDF'} disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
-                  <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Menyiapkan PDF…' : 'Unduh PDF'} aria-label={isDownloadingPdf ? 'Menyiapkan PDF' : 'Unduh PDF'} disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
+                  <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF…' : 'Unduh PDF'} aria-label={isDownloadingPdf ? 'Mengunduh PDF' : 'Unduh PDF'} disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
                   <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
                   {page === 'quotation' && <button className="icon-button" title="Buat invoice dari penawaran" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>}
                   {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
@@ -487,14 +514,14 @@ function App() {
             </tbody></table></div>
         </section>
 
-        <div className="storage-banner"><strong>Catatan:</strong><span>Dokumen hanya tersimpan di browser/perangkat ini. Buat cadangan JSON secara berkala untuk mencegah kehilangan data.</span><button onClick={backup}>Buat cadangan</button></div>
+        <div className="storage-banner"><strong>Catatan:</strong><span>Dokumen hanya tersimpan di browser/perangkat ini. Buat cadangan JSON secara berkala untuk mencegah kehilangan data.</span><button className="button primary backup-button" onClick={backup}>Buat cadangan</button></div>
       </section>
     </main>
 
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)}/>}
     {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm}/>}
     {modal === 'settings' && <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/>}
-    {message && <div className="toast" role="status"><span>{message}</span><button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
+    {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
 }
 

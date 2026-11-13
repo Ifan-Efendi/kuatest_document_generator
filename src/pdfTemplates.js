@@ -259,20 +259,9 @@ async function renderPdf(payload, fileName) {
   return file
 }
 
-export async function previewPdf(payload, fileName, reservedWindow = null) {
-  const popup = reservedWindow || window.open('', '_blank')
-  if (!popup) {
-    throw new Error('Izinkan pop-up di browser untuk melihat PDF.')
-  }
-  try {
-    const file = await renderPdf(payload, fileName)
-    const url = URL.createObjectURL(file)
-    popup.location.replace(url)
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  } catch (error) {
-    popup.close()
-    throw error
-  }
+export async function previewPdf(payload, fileName) {
+  const file = await renderPdf(payload, fileName)
+  return URL.createObjectURL(file)
 }
 
 export async function downloadPdf(payload, fileName) {
