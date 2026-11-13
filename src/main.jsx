@@ -1,0 +1,592 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import {
+  amountInWords,
+  downloadPdf,
+  paymentPurpose,
+  previewPdf,
+} from './pdfTemplates'
+import {
+  deleteRecord,
+  exportBackup,
+  getDocuments,
+  getReceipts,
+  getSettings,
+  importBackup,
+  saveDocument,
+  saveReceipt,
+  saveSettings,
+} from './storage'
+import './style.css'
+
+const today = () => {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+const createId = () => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
+const periodKey = (date = today()) => date.slice(0, 7)
+const currentPeriod = periodKey()
+const defaultCompany = {
+  name: "PT. KUATEST MEGATAMA",
+  description: "Material Testing Equipment | Calibration Services | Equipment Repair \u0026 Maintenance",
+  legal_number: "AHU-0083816.AH.01.01.TAHUN 2025",
+  business_number: "3009250104971",
+  address: "Komplek bukit permata cimahi, Jl. Raya Bukit Permata No.8 Blk I1, Cilame, Kec. Ngamprah, Kabupaten Bandung Barat, Jawa Barat 40552",
+  phone: "+62 895-3445-73716",
+  email: "contact@kuatest.co.id",
+  website: "www.kuatest.co.id",
+  bank_name: "BCA",
+  bank_account: "3371997677",
+  bank_account_name: "RIKA ANGGARENI",
+  signatory_name: "Rika Anggareni, S.M.",
+  invoice_signatory_name: "Rika Anggareni, S.M.",
+  logo: '/assets/company-logo.png',
+  numberBaselines: { [currentPeriod]: { quotation: 33, invoice: null, receipt: null } },
+}
+const labels = { quotation: 'Penawaran', invoice: 'Invoice', receipt: 'Kwitansi' }
+const codes = { quotation: 'QUO', invoice: 'INV', receipt: 'KWT' }
+const defaultWorkConditions = [
+  'Garansi 1 Tahun',
+  'Harga sudah termasuk kalibrasi',
+  'Pekerjaan dilakukan setelah turun PO',
+  'Harga Belum Termasuk Biaya Pengiriman',
+  'Pembayaran Down Payment 50%, 50% Setelah Alat Siap Dikirim',
+].join('\n')
+const defaultPaymentTerms = [
+  'Pembayaran Ditransfer Melalui Bank BCA',
+  'No. Rek : 3371997677 Atas Nama : RIKAANGGARENI',
+].join('\n')
+const months = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
+const todayAt = (date) => date || today()
+const safeFilePart = (value, fallback) => String(value || fallback)
+  .trim()
+  .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+  .replace(/\s+/g, ' ')
+  .replace(/-+/g, '-')
+  .replace(/[. ]+$/g, '')
+const pdfFileName = (type, number, companyName) => {
+  const title = type === 'quotation' ? 'QUOTATION' : type === 'invoice' ? 'INVOICE' : 'KWITANSI'
+  const sequence = String(number || '').split('/')[0]
+  return `${title} ${safeFilePart(sequence, 'TANPA-NOMOR')} - ${safeFilePart(companyName, 'TANPA-NAMA')}.pdf`
+}
+
+async function embedAsset(value) {
+  if (!value || String(value).startsWith('data:')) return value
+  const response = await fetch(value)
+  if (!response.ok) return value
+  const blob = await response.blob()
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => resolve(value)
+    reader.readAsDataURL(blob)
+  })
+}
+
+function numberFor(type, date, documents, receipts, baselines = {}) {
+  const [year, month] = todayAt(date).split('-')
+  const code = codes[type]
+  const matches = (type === 'receipt' ? receipts : documents.filter((row) => row.type === type))
+    .filter((row) => String(row.number || '').endsWith(`/${code}/KMT/${months[Number(month)]}/${year}`))
+    .map((row) => Number(String(row.number).split('/')[0]) || 0)
+  const baseline = Number(baselines?.[`${year}-${month}`]?.[type] ?? 0)
+  const next = Math.max(0, baseline, ...matches) + 1
+  return `${String(next).padStart(4, '0')}/${code}/KMT/${months[Number(month)]}/${year}`
+}
+
+const money = (value) => `Rp ${Number(value || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const formatAmount = (value) => {
+  if (value === '' || value == null || !Number.isFinite(Number(value))) return ''
+  return Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 })
+}
+const parseAmountInput = (value) => {
+  const [integer = '', fraction] = String(value).split(',', 2)
+  const whole = integer.replace(/\D/g, '')
+  const decimals = fraction?.replace(/\D/g, '')
+  if (!whole && !decimals) return ''
+  return `${whole || '0'}${decimals === undefined ? '' : `.${decimals}`}`
+}
+const formatAmountDraft = (value) => {
+  const [integer = '', fraction] = String(value).replace(/[^\d,.]/g, '').split(',', 2)
+  const digits = integer.replace(/\D/g, '')
+  const grouped = digits ? Number(digits).toLocaleString('id-ID') : ''
+  return `${grouped}${fraction === undefined ? '' : `,${fraction.replace(/\D/g, '')}`}`
+}
+
+function AmountInput({ value, onValueChange, ...props }) {
+  const [focused, setFocused] = useState(false)
+  const [draft, setDraft] = useState(() => formatAmount(value))
+  useEffect(() => {
+    if (!focused) setDraft(formatAmount(value))
+  }, [value, focused])
+  return <input {...props} type="text" inputMode="decimal" value={draft}
+    onFocus={() => setFocused(true)}
+    onChange={(event) => {
+      const next = formatAmountDraft(event.target.value)
+      setDraft(next)
+      onValueChange(parseAmountInput(next))
+    }}
+    onBlur={() => {
+      setFocused(false)
+      setDraft(formatAmount(parseAmountInput(draft)))
+    }} />
+}
+
+const docTotal = (document) => {
+  const subtotal = (document.items || []).reduce((sum, item) => sum + Number(item.total ?? Number(item.quantity || 0) * Number(item.price || 0)), 0)
+  const adjusted = Math.max(0, subtotal + Number(document.shippingFee || 0) - Number(document.discount || 0))
+  const rate = Number(document.vatRate || document.pphRate || 0)
+  const tax = rate > 0 ? adjusted * rate / 100 : Number(document.vatAmount ?? document.pph ?? 0)
+  return adjusted + tax
+}
+
+function newDocument(type, quotation = null, documents = [], receipts = [], baselines = {}) {
+  const date = today()
+  const autoNumber = numberFor(type, date, documents, receipts, baselines)
+  return {
+    id: createId(), type, number: autoNumber, autoNumber, date, dueDate: '',
+    status: 'Draft', paymentStatus: 'DP', recipientName: quotation?.recipientName || '', companyName: quotation?.companyName || '',
+    phone: '',
+    workConditions: quotation?.workConditions || (type === 'quotation' ? defaultWorkConditions : ''),
+    paymentTerms: quotation?.paymentTerms || defaultPaymentTerms,
+    quotationId: quotation?.id || '', quotationNumber: quotation?.number || '', billingStage: 'penuh',
+    billingPercentage: 0, downPaymentAmount: '', vatRate: quotation?.vatRate ?? quotation?.pphRate ?? 0,
+    vatAmount: quotation?.vatAmount ?? quotation?.pph ?? 0,
+    shippingFee: quotation?.shippingFee || 0, discount: quotation?.discount || 0,
+    items: quotation?.items?.map((item) => ({ ...item, id: createId(), specification: String(item.specification || '').trim() || 'N/A' })) || [{ id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }],
+  }
+}
+
+function newReceipt(invoice, documents, receipts, baselines = {}) {
+  const date = today()
+  const autoNumber = numberFor('receipt', date, documents, receipts, baselines)
+  return {
+    id: createId(), invoiceId: invoice?.id || '', number: autoNumber, autoNumber,
+    date, amount: '', receivedFrom: invoice?.companyName || '', description: invoice ? paymentPurpose(invoice) : '',
+    method: 'transfer', amountWords: '',
+  }
+}
+
+function Icon({ name }) {
+  if (name === 'settings') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2" fill="white"/><circle cx="9" cy="12" r="2" fill="white"/><circle cx="17" cy="18" r="2" fill="white"/></svg>
+  const paths = {
+    quotation: <><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></>,
+    invoice: <><path d="M6.5 3.75h11v16.5h-11z"/><path d="M9 8h6M9 11.5h6M9 15h3"/></>,
+    receipt: <><path d="M7 3.75h10v16.5l-2.5-1.8-2.5 1.8-2.5-1.8L7 20.25z"/><path d="M9.5 9.5h5M9.5 13h5"/></>,
+    search: <><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4 4"/></>,
+    plus: <><path d="M12 5v14M5 12h14"/></>,
+    eye: <><path d="M2.5 12s3.2-6 9.5-6 9.5 6 9.5 6-3.2 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
+    edit: <><path d="m4 16.8-.8 4 4-.8L19 8.2a2.1 2.1 0 0 0-3-3Z"/><path d="m14.5 6.7 3 3"/></>,
+    download: <><path d="M12 3.5v12m0 0 4-4m-4 4-4-4M4.5 20h15"/></>,
+    close: <><path d="m6 6 12 12M18 6 6 18"/></>,
+    trash: <><path d="M4.5 7h15M9 7V4.5h6V7m2 0-.7 13H7.7L7 7m3.5 3v6m3-6v6"/></>,
+    arrow: <><path d="M4 12h15m-6-6 6 6-6 6"/></>,
+    receiptAdd: <><path d="M7 3.75h10v16.5l-2.5-1.8-2.5 1.8-2.5-1.8L7 20.25z"/><path d="M9 9.5h6M9 13h3m5 1v5m-2.5-2.5h5"/></>,
+  }
+  return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
+}
+
+function App() {
+  const [documents, setDocuments] = useState([])
+  const [receipts, setReceipts] = useState([])
+  const [company, setCompany] = useState(defaultCompany)
+  const [page, setPage] = useState('quotation')
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState(null)
+  const [docForm, setDocForm] = useState(null)
+  const [receiptForm, setReceiptForm] = useState(null)
+  const [settingsForm, setSettingsForm] = useState(defaultCompany)
+  const [ready, setReady] = useState(false)
+  const [message, setMessage] = useState('')
+
+  const refresh = async () => {
+    const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
+    setDocuments(savedDocuments.sort((a, b) => String(b.date).localeCompare(String(a.date))))
+    setReceipts(savedReceipts.sort((a, b) => String(b.date).localeCompare(String(a.date))))
+    const savedBaselines = savedCompany.numberBaselines || {}
+    const numberBaselines = { ...defaultCompany.numberBaselines, ...savedBaselines }
+    numberBaselines[currentPeriod] = {
+      ...defaultCompany.numberBaselines[currentPeriod],
+      ...savedBaselines[currentPeriod],
+    }
+    const mergedCompany = { ...defaultCompany, ...savedCompany, city: '', numberBaselines }
+    Object.entries(defaultCompany).forEach(([key, fallback]) => {
+      const value = mergedCompany[key]
+      if (typeof fallback === 'string' && fallback && (typeof value !== 'string' || !value.trim() || /^\[.*\]$/.test(value.trim()))) {
+        mergedCompany[key] = fallback
+      }
+    })
+    setCompany(mergedCompany)
+    if (JSON.stringify(mergedCompany) !== JSON.stringify({ ...defaultCompany, ...savedCompany, numberBaselines })) {
+      await saveSettings(mergedCompany)
+    }
+  }
+
+  useEffect(() => {
+    refresh().then(() => setReady(true)).catch((error) => {
+      setMessage(error.message || 'Penyimpanan lokal tidak dapat dibuka.')
+      setReady(true)
+    })
+  }, [])
+
+  const items = page === 'receipt' ? receipts : documents.filter((row) => row.type === page)
+  const filtered = useMemo(() => items.filter((row) => `${row.number} ${row.companyName || row.receivedFrom || ''} ${row.status || ''}`.toLowerCase().includes(query.toLowerCase())), [items, query])
+
+  const startDocument = (type, quotation = null) => {
+    try {
+      const currentBaselines = company.numberBaselines || {}
+      const form = newDocument(type, quotation, documents, receipts, currentBaselines)
+      setDocForm(form)
+      setModal('document')
+    } catch (error) {
+      setMessage(error.message || `Form ${labels[type]} gagal dibuka.`)
+    }
+  }
+
+  const startReceipt = (invoice = null) => {
+    setReceiptForm(newReceipt(invoice, documents, receipts, company.numberBaselines))
+    setModal('receipt')
+  }
+
+  const saveDoc = async (event) => {
+    event.preventDefault()
+    const form = {
+      ...docForm,
+      number: docForm.number.trim() || docForm.autoNumber || numberFor(docForm.type, docForm.date, documents, receipts, company.numberBaselines),
+      items: docForm.items.filter((item) => item.name.trim()).map((item) => ({
+        ...item,
+        total: Math.round((Number(item.quantity || 0) * Number(item.price || 0) + Number.EPSILON) * 100) / 100,
+      })),
+    }
+    if (!form.number || !form.companyName.trim() || form.items.length === 0) {
+      setMessage('Isi nomor, nama perusahaan, dan minimal satu barang.')
+      return
+    }
+    const subtotal = form.items.reduce((sum, item) => sum + Number(item.total || 0), 0)
+    const taxable = Math.max(0, subtotal + Number(form.shippingFee || 0) - Number(form.discount || 0))
+    form.subtotal = subtotal
+    form.total = taxable
+    form.vatAmount = Number(form.vatRate || 0) > 0 ? taxable * Number(form.vatRate || 0) / 100 : Number(form.vatAmount || form.pph || 0)
+    form.grandTotal = taxable + form.vatAmount
+    form.billingLabel = form.billingStage === 'dp' ? `DP ${form.billingPercentage}%` : 'Tagihan Penuh'
+    await saveDocument(form)
+    await refresh()
+    setModal(null)
+    setMessage(`${labels[form.type]} tersimpan di browser ini.`)
+  }
+
+  const saveReceiptForm = async (event) => {
+    event.preventDefault()
+    const invoice = documents.find((row) => row.id === receiptForm.invoiceId)
+    const number = receiptForm.number.trim() || receiptForm.autoNumber || numberFor('receipt', receiptForm.date, documents, receipts, company.numberBaselines)
+    if (!invoice || Number(receiptForm.amount) <= 0 || !number) {
+      setMessage('Pilih invoice dan isi nomor serta jumlah pembayaran.')
+      return
+    }
+    const otherPaid = receipts.filter((row) => row.invoiceId === invoice.id && row.id !== receiptForm.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    const remaining = Math.max(0, docTotal(invoice) - otherPaid)
+    if (Number(receiptForm.amount) > remaining) {
+      setMessage(`Jumlah pembayaran melebihi sisa invoice ${money(remaining)}.`)
+      return
+    }
+    const saved = {
+      ...receiptForm,
+      number,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.number,
+      companyName: invoice.companyName,
+      amount: Number(receiptForm.amount),
+      amountWords: receiptForm.amountWords.trim() || amountInWords(receiptForm.amount),
+    }
+    await saveReceipt(saved)
+    await refresh()
+    setModal(null)
+    setMessage('Kwitansi tersimpan di browser ini.')
+  }
+
+  const changeStatus = async (document, status) => {
+    await saveDocument({ ...document, status })
+    await refresh()
+  }
+
+  const editDocument = (document) => {
+    const defaultPhone = '+62 895-3445-73716'
+    setDocForm({ ...document, phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: (document.items || []).map((item) => ({ ...item })) })
+    setModal('document')
+  }
+
+  const editReceipt = (receipt) => {
+    setReceiptForm({ ...receipt })
+    setModal('receipt')
+  }
+
+  const findReceiptInvoice = (receipt) => documents.find((row) => row.id === receipt.invoiceId)
+    || documents.find((row) => row.type === 'invoice' && receipt.invoiceNumber && row.number === receipt.invoiceNumber)
+    || (receipt.invoiceNumber || receipt.companyName || receipt.receivedFrom
+      ? { number: receipt.invoiceNumber || '', companyName: receipt.companyName || receipt.receivedFrom || '' }
+      : null)
+
+  const openDocumentPdf = async (document) => {
+    const popup = window.open('', '_blank')
+    const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
+    const fileName = pdfFileName(document.type, document.number, document.companyName)
+    await downloadPdf({ kind: 'document', document, company: pdfCompany }, fileName, popup)
+  }
+  const previewDocumentPdf = async (document) => {
+    const popup = window.open('', '_blank')
+    const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
+    await previewPdf({ kind: 'document', document, company: pdfCompany }, pdfFileName(document.type, document.number, document.companyName), popup)
+  }
+  const openReceiptPdf = async (receipt) => {
+    const invoice = findReceiptInvoice(receipt)
+    if (!invoice) return setMessage('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
+    const popup = window.open('', '_blank')
+    const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
+    const fileName = pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName)
+    await downloadPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, fileName, popup)
+  }
+  const previewReceiptPdf = async (receipt) => {
+    const invoice = findReceiptInvoice(receipt)
+    if (!invoice) return setMessage('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
+    const popup = window.open('', '_blank')
+    const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
+    await previewPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName), popup)
+  }
+
+  const createInvoiceFrom = async (quotation) => {
+    const existing = documents.some((row) => row.type === 'invoice' && row.quotationId === quotation.id)
+    if (existing && !window.confirm('Penawaran ini sudah memiliki invoice. Buat invoice baru juga?')) return
+    startDocument('invoice', quotation)
+  }
+
+  const remove = async (record, storeName) => {
+    if (storeName === 'documents' && receipts.some((receipt) => receipt.invoiceId === record.id)) {
+      setMessage('Invoice ini memiliki kuitansi terkait. Hapus kuitansinya dulu jika memang ingin menghapus invoice.')
+      return
+    }
+    if (!window.confirm(`Hapus ${record.number}? Data lokal yang dihapus tidak bisa dikembalikan kecuali ada cadangan.`)) return
+    await deleteRecord(storeName, record.id)
+    await refresh()
+  }
+
+  const showSettings = () => { setSettingsForm({ ...company }); setModal('settings') }
+  const saveCompanySettings = async (event) => {
+    event.preventDefault()
+    await saveSettings(settingsForm)
+    setCompany({ ...settingsForm })
+    setModal(null)
+    setMessage('Identitas perusahaan tersimpan di browser ini.')
+  }
+
+  const backup = async () => {
+    const blob = await exportBackup()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `kuatest-cadangan-${today()}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const restore = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!window.confirm('Impor cadangan akan mengganti seluruh data lokal browser ini. Lanjutkan?')) return
+    try {
+      await importBackup(file)
+      await refresh()
+      setMessage('Cadangan berhasil dipulihkan.')
+    } catch (error) {
+      setMessage(error.message || 'File cadangan gagal dibaca.')
+    } finally { event.target.value = '' }
+  }
+
+  const documentType = page === 'receipt' ? 'receipt' : page
+  const title = labels[documentType]
+
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark">K</div><div><strong>KUATEST MEGATAMA</strong><span>Document Generator</span></div></div>
+      {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery('') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
+      <div className="sidebar-spacer" />
+    </aside>
+
+    <main className="main-area">
+      <header className="topbar"><div className="mobile-brand">KUATEST MEGATAMA</div><div className="topbar-right">
+        <label className="file-control"><Icon name="download"/><span>Impor</span><input type="file" accept="application/json,.json" onChange={restore}/></label>
+        <button className="button subtle" onClick={backup}><Icon name="download"/><span>Cadangkan</span></button>
+        <button type="button" className="avatar" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>
+      </div></header>
+
+      <section className="page-content">
+        <div className="breadcrumbs">Dokumen <span>/</span> {title}</div>
+        <div className="page-heading"><div><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
+          {page === 'receipt'
+            ? <button className="button primary" onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
+            : <button type="button" className="button primary" onClick={() => startDocument(page)}><Icon name="plus"/>Buat {title}</button>}
+        </div>
+
+        <section className="table-card">
+          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div></div>
+          <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}<th className="actions-heading">Aksi</th></tr></thead>
+            <tbody>{filtered.map((record) => {
+              const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
+              return <tr key={record.id}>
+                <td className="number-cell">{record.number}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>
+                {page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
+                <td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
+                {page !== 'receipt' && <td><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                  {(page === 'quotation' ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'] : ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']).map((status) => <option key={status}>{status}</option>)}
+                </select></td>}
+                <td><div className="row-actions">
+                  <button className="icon-button" title="Preview PDF" onClick={() => page === 'receipt' ? previewReceiptPdf(record) : previewDocumentPdf(record)}><Icon name="eye"/></button>
+                  <button className="icon-button" title="Unduh PDF" onClick={() => page === 'receipt' ? openReceiptPdf(record) : openDocumentPdf(record)}><Icon name="download"/></button>
+                  <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
+                  {page === 'quotation' && <button className="icon-button" title="Buat invoice dari penawaran" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>}
+                  {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
+                  <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>
+                </div></td>
+              </tr>
+            })}
+            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{ready ? 'Belum ada dokumen. Buat dokumen pertama untuk memulai.' : 'Memuat data...'}</td></tr>}
+            </tbody></table></div>
+        </section>
+
+        <div className="storage-banner"><strong>Catatan:</strong><span>Dokumen hanya tersimpan di browser/perangkat ini. Buat cadangan JSON secara berkala untuk mencegah kehilangan data.</span><button onClick={backup}>Buat cadangan</button></div>
+      </section>
+    </main>
+
+    {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)}/>}
+    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm}/>}
+    {modal === 'settings' && <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/>}
+    {message && <div className="toast" role="status"><span>{message}</span><button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
+  </div>
+}
+
+function DocumentModal({ document, setDocument, onClose, onSave, company, documents, receipts, isExisting }) {
+  const set = (key, value) => setDocument((state) => ({ ...state, [key]: value }))
+  const updateItem = (id, key, value) => setDocument((state) => ({ ...state, items: state.items.map((item) => item.id === id ? { ...item, [key]: value } : item) }))
+  const addItem = () => setDocument((state) => ({ ...state, items: [...state.items, { id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }] }))
+  const removeItem = (id) => setDocument((state) => ({ ...state, items: state.items.filter((item) => item.id !== id) }))
+  const total = docTotal(document)
+  const readImage = (file, callback) => {
+    if (!file) return
+    if (file.size > 3 * 1024 * 1024) return window.alert('Ukuran gambar maksimal 3 MB.')
+    const reader = new FileReader()
+    reader.onload = () => callback(reader.result)
+    reader.readAsDataURL(file)
+  }
+
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <form className="modal document-modal" onSubmit={onSave}>
+      <div className="modal-head"><div><span className="eyebrow">DOKUMEN</span><h2>{isExisting ? 'Ubah' : 'Buat'} {labels[document.type]}</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="modal-body">
+        <section className="form-section"><h3>Informasi dokumen</h3><div className="form-grid">
+          <Field label={document.type === 'quotation' ? 'No. Quotation' : 'No. Invoice'}><input value={document.number} onChange={(event) => set('number', event.target.value)} /></Field>
+          <Field label="Tanggal" required><input required type="date" value={document.date} onChange={(event) => setDocument((state) => {
+            const nextDate = event.target.value
+            if (state.autoNumber && (!state.number || state.number === state.autoNumber)) {
+              const nextNumber = numberFor(state.type, nextDate, documents, receipts, company.numberBaselines)
+              return { ...state, date: nextDate, number: state.number ? nextNumber : '', autoNumber: nextNumber }
+            }
+            return { ...state, date: nextDate }
+          })} /></Field>
+          {document.type === 'invoice' && <Field label="Jatuh tempo"><input type="date" value={document.dueDate || ''} onChange={(event) => set('dueDate', event.target.value)} /></Field>}
+          <Field label="Nama penerima"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
+          <Field label="Perusahaan" required><input required value={document.companyName} onChange={(event) => set('companyName', event.target.value)} /></Field>
+          <Field label="Telepon / Fax"><input value={document.phone} onChange={(event) => set('phone', event.target.value)} /></Field>
+          <Field label="E-mail"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
+          <Field label="Alamat" className="full"><textarea rows="2" value={document.address} onChange={(event) => set('address', event.target.value)} /></Field>
+          {document.type === 'invoice' && <Field label="Nomor penawaran"><input value={document.quotationNumber || ''} onChange={(event) => set('quotationNumber', event.target.value)} /></Field>}
+          {document.type === 'invoice' && <Field label="Jenis tagihan"><select value={document.billingStage || 'penuh'} onChange={(event) => set('billingStage', event.target.value)}><option value="penuh">Tagihan penuh</option><option value="dp">DP</option></select></Field>}
+          {document.type === 'invoice' && document.billingStage === 'dp' && <Field label="Nominal DP"><AmountInput value={document.downPaymentAmount || ''} onValueChange={(value) => set('downPaymentAmount', value)} /></Field>}
+        </div></section>
+
+        <section className="form-section"><div className="section-head"><div><h3>Barang / jasa</h3><p>Masukkan nama alat.</p></div></div>
+          <div className="line-items">{document.items.map((item, index) => <div className="line-item" key={item.id}>
+            <div className="line-index">{String(index + 1).padStart(2, '0')}</div>
+            <div className="line-fields"><Field label="Nama alat"><input value={item.name} onChange={(event) => updateItem(item.id, 'name', event.target.value)} /></Field><Field label="Spesifikasi"><textarea rows="1" value={item.specification} onChange={(event) => updateItem(item.id, 'specification', event.target.value)} /></Field><Field label="Jumlah"><input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} /></Field><Field label="Satuan"><input value={item.unit} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} /></Field><Field label="Harga"><AmountInput value={item.price} onValueChange={(value) => updateItem(item.id, 'price', value)} /></Field>
+              <Field label="Upload foto produk" className="full"><div className="upload-row"><input type="file" accept="image/*" onChange={(event) => readImage(event.target.files[0], (image) => updateItem(item.id, 'image', image))}/>{item.image && <button type="button" className="text-button danger-text" onClick={() => updateItem(item.id, 'image', '')}>Hapus gambar</button>}</div></Field>
+            </div><button className="icon-button danger remove-line" type="button" title="Hapus baris" disabled={document.items.length === 1} onClick={() => removeItem(item.id)}><Icon name="trash"/></button>
+          </div>)}</div>
+          <div className="line-items-footer"><button className="button small subtle" type="button" onClick={addItem}><Icon name="plus"/>Tambah baris</button></div>
+        </section>
+
+        <section className="form-section"><h3>Perhitungan</h3><div className="form-grid">
+          <Field label="Subtotal barang"><output className="field-output">{money(document.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0))}</output></Field>
+          <Field label="Ongkir"><AmountInput value={document.shippingFee || 0} onValueChange={(value) => set('shippingFee', value)} /></Field>
+          <Field label="Diskon"><AmountInput value={document.discount || 0} onValueChange={(value) => set('discount', value)} /></Field>
+          {document.type === 'quotation' && <><Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field><Field label="PPN nominal (jika tanpa tarif)"><AmountInput value={document.vatAmount || 0} onValueChange={(value) => set('vatAmount', value)} /></Field></>}
+          {document.type === 'invoice' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
+          <Field label="Grand Total"><output className="total-output">{money(total)}</output></Field>
+        </div></section>
+
+        {document.type === 'quotation' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Kondisi perjanjian kerja" className="full"><textarea rows="5" value={document.workConditions || ''} onChange={(event) => set('workConditions', event.target.value)} /></Field><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
+        {document.type === 'invoice' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
+      </div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="submit" className="button primary">Simpan {labels[document.type]}</button></div>
+    </form>
+  </div>
+}
+
+function Field({ label, required = false, className = '', children }) {
+  return <label className={`field ${className}`}><span>{label}{required && <b> *</b>}</span>{children}</label>
+}
+
+function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave }) {
+  const invoice = documents.find((row) => row.id === receipt.invoiceId)
+  const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments) : 0
+  const changeInvoice = (id) => {
+    const selected = documents.find((row) => row.id === id)
+    setReceipt((state) => ({ ...state, invoiceId: id, receivedFrom: selected?.companyName || '', description: selected ? paymentPurpose(selected) : '' }))
+  }
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <form className="modal compact-modal" onSubmit={onSave}>
+      <div className="modal-head"><div><span className="eyebrow">DOKUMEN</span><h2>Buat Kwitansi</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="modal-body"><section className="form-section"><div className="form-grid">
+        <Field label="Invoice" required className="full"><select required value={receipt.invoiceId} onChange={(event) => changeInvoice(event.target.value)}><option value="">Pilih invoice</option>{documents.filter((doc) => doc.type === 'invoice').map((doc) => <option key={doc.id} value={doc.id}>{doc.number} · {doc.companyName} · {money(Math.max(0, docTotal(doc) - receipts.filter((row) => row.invoiceId === doc.id && row.id !== receipt.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)))}</option>)}</select></Field>
+        <Field label="Nomor kwitansi"><input value={receipt.number} onChange={(event) => setReceipt((state) => ({ ...state, number: event.target.value }))}/></Field>
+        <Field label="Tanggal pembayaran" required><input required type="date" value={receipt.date} onChange={(event) => setReceipt((state) => {
+          const nextDate = event.target.value
+          if (state.autoNumber && (!state.number || state.number === state.autoNumber)) {
+            const nextNumber = numberFor('receipt', nextDate, documents, receipts, baselines)
+            return { ...state, date: nextDate, number: state.number ? nextNumber : '', autoNumber: nextNumber }
+          }
+          return { ...state, date: nextDate }
+        })}/></Field>
+        <Field label="Telah terima dari"><input value={receipt.receivedFrom} onChange={(event) => setReceipt((state) => ({ ...state, receivedFrom: event.target.value }))}/></Field>
+        <Field label="Jumlah pembayaran" required><AmountInput required value={receipt.amount} onValueChange={(value) => setReceipt((state) => ({ ...state, amount: value, amountWords: amountInWords(value) }))}/></Field>
+        <Field label="Metode pembayaran"><select value={receipt.method} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option><option value="lainnya">Lainnya</option></select></Field>
+        <Field label="Untuk pembayaran" className="full"><input value={receipt.description} onChange={(event) => setReceipt((state) => ({ ...state, description: event.target.value }))}/></Field>
+        <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
+        <div className="full outstanding"><span>Sisa invoice</span><strong>{money(remaining)}</strong></div>
+      </div></section></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="submit" className="button primary">Simpan Kwitansi</button></div>
+    </form>
+  </div>
+}
+
+function SettingsModal({ settings, setSettings, onClose, onSave }) {
+  const update = (key, value) => setSettings((state) => ({ ...state, [key]: value }))
+  const image = (key, file) => {
+    if (!file) return
+    if (file.size > 3 * 1024 * 1024) return window.alert('Ukuran gambar maksimal 3 MB.')
+    const reader = new FileReader()
+    reader.onload = () => update(key, reader.result)
+    reader.readAsDataURL(file)
+  }
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <form className="modal compact-modal settings-modal" onSubmit={onSave}>
+      <div className="modal-head"><div><h2>Identitas Perusahaan</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="modal-body"><section className="form-section"><div className="form-grid">
+        {[['name','Nama perusahaan'],['description','Deskripsi'],['legal_number','No. SK Menkumham'],['business_number','NIB'],['phone','Telepon / Fax'],['email','E-mail'],['website','Website'],['address','Alamat kantor'],['bank_name','Nama bank'],['bank_account','Nomor rekening'],['bank_account_name','Nama pemilik rekening'],['signatory_name','Penandatangan penawaran'],['invoice_signatory_name','Penandatangan invoice / kuitansi']].map(([key,label]) => <Field key={key} label={label} className={key === 'description' || key === 'address' ? 'full' : ''}><input value={settings[key] || ''} onChange={(event) => update(key, event.target.value)}/></Field>)}
+        {['logo','signatureStamp'].map((key) => <Field key={key} label={{logo:'Logo',signatureStamp:'Upload Cap dan Tanda Tangan'}[key]}><input type="file" accept="image/*" onChange={(event) => image(key, event.target.files[0])}/>{settings[key] && <span className="file-status">Gambar sudah dipilih</span>}</Field>)}
+      </div></section></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="submit" className="button primary">Simpan Identitas</button></div>
+    </form>
+  </div>
+}
+
+createRoot(document.getElementById('root')).render(<App />)
+
