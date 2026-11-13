@@ -252,7 +252,11 @@ async function renderPdf(payload, fileName) {
     const result = await response.json().catch(() => null)
     throw new Error(result?.error || 'PDF gagal dibuat.')
   }
-  return response.blob()
+  const file = await response.blob()
+  if (await file.slice(0, 5).text() !== '%PDF-') {
+    throw new Error('Server tidak mengirim file PDF yang valid. Coba lagi setelah aplikasi berhasil di-deploy ke Vercel.')
+  }
+  return file
 }
 
 export async function previewPdf(payload, fileName, reservedWindow = null) {
@@ -272,26 +276,19 @@ export async function previewPdf(payload, fileName, reservedWindow = null) {
   }
 }
 
-export async function downloadPdf(payload, fileName, reservedWindow = null) {
-  const popup = reservedWindow || window.open('', '_blank')
+export async function downloadPdf(payload, fileName) {
   try {
     const file = await renderPdf(payload, fileName)
     const url = URL.createObjectURL(file)
-    const trustedHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
-    if (!window.isSecureContext && !trustedHost) {
-      if (popup) popup.location.replace(url)
-      else window.open(url, '_blank')
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-      return
-    }
-    popup?.close()
     const link = document.createElement('a')
     link.href = url
     link.download = fileName
+    link.hidden = true
+    document.body.appendChild(link)
     link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (error) {
-    popup?.close()
     window.alert(error.message || 'PDF gagal dibuat.')
   }
 }

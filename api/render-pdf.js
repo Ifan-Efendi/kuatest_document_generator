@@ -6,6 +6,12 @@ import {
   sanitizePdfFileName,
 } from '../src/serverPdf.js'
 
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: '4mb' },
+  },
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST')

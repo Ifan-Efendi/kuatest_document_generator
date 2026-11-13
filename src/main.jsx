@@ -327,10 +327,9 @@ function App() {
       : null)
 
   const openDocumentPdf = async (document) => {
-    const popup = window.open('', '_blank')
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
     const fileName = pdfFileName(document.type, document.number, document.companyName)
-    await downloadPdf({ kind: 'document', document, company: pdfCompany }, fileName, popup)
+    await downloadPdf({ kind: 'document', document, company: pdfCompany }, fileName)
   }
   const previewDocumentPdf = async (document) => {
     const popup = window.open('', '_blank')
@@ -340,10 +339,9 @@ function App() {
   const openReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
     if (!invoice) return setMessage('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
-    const popup = window.open('', '_blank')
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
     const fileName = pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName)
-    await downloadPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, fileName, popup)
+    await downloadPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, fileName)
   }
   const previewReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
