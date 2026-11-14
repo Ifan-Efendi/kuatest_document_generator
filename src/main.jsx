@@ -54,7 +54,7 @@ const defaultWorkConditions = [
 ].join('\n')
 const defaultPaymentTerms = [
   'Pembayaran Ditransfer Melalui Bank BCA',
-  'No. Rek : 3371997677 Atas Nama : RIKAANGGARENI',
+  'No. Rek : 3371997677 Atas Nama : RIKA ANGGARENI',
 ].join('\n')
 const months = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
 const todayAt = (date) => date || today()
