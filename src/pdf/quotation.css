@@ -57,8 +57,8 @@
         .document-page.has-adjustments .terms { margin-top: 2mm; }
         .terms-title { font-weight: 700; margin-bottom: 1.5mm; }
         .term-line { padding-left: 3mm; text-indent: -2mm; }
-        .closing { margin: 2mm 2mm 0; font-size: 10.5pt; }
-        .document-page.has-adjustments .closing { margin-top: 1mm; }
+        .closing { margin: 4mm 2mm 0; font-size: 10.5pt; }
+        .document-page.has-adjustments .closing { margin-top: 3mm; }
         .signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; width: 160mm; margin: 11mm 0 0 10mm; position: relative; left: -8mm; page-break-inside: avoid; break-inside: avoid; }
         .document-page.has-adjustments .signatures { margin-top: 9mm; }
         .signature { min-height: 26mm; text-align: center; font-size: 10.5pt; }
