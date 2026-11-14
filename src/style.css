@@ -340,10 +340,10 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
 
 /* Keep sidebar branding above the app-wide font-size normalization. */
 html .app-shell .sidebar .brand strong {
-  font-size: clamp(22px, 2.2vw, 30px);
+  font-size: 24px;
   letter-spacing: -.04em;
-  line-height: 1.05;
-  transform: scaleX(.75);
+  line-height: 1.15;
+  transform: none;
 }
 html .app-shell .sidebar .brand span {
   font-size: clamp(18px, 1.5vw, 20px);
