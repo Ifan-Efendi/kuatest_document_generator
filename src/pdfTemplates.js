@@ -1,4 +1,3 @@
-import { supabase } from './supabase'
 import { invoiceCss, quotationCss, receiptCss } from './pdfStyles.js'
 
 const h = (value = '') => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character])
@@ -244,6 +243,7 @@ export function receiptPdf(receipt, invoice, company, fileName = '') {
 }
 
 async function renderPdf(payload, fileName) {
+  const { supabase } = await import('./supabase.js')
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) throw new Error('Silakan masuk kembali untuk membuat PDF.')
