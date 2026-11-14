@@ -542,7 +542,7 @@ function App() {
         <div className="account-menu" ref={userMenuRef}>
           <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><Icon name="user"/></button>
           {userMenuOpen && <div className="account-popover" role="menu">
-            <div className="account-details"><strong>{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Admin')}</strong><span>{user?.email || ''}</span><small>{profile.role === 'director' ? 'Direktur' : 'Admin'}</small></div>
+            <div className="account-details"><strong>{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Administrator')}</strong><span>{user?.email || ''}</span><small>{profile.role === 'director' ? 'Direktur' : 'Administrator'}</small></div>
             <button type="button" className="account-logout" role="menuitem" onClick={signOut}><Icon name="logout"/>Keluar</button>
           </div>}
         </div>
