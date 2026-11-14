@@ -158,7 +158,7 @@ export function documentPdf(document, company, fileName = '') {
     : `<section class="document-page${hasAdjustments ? ' has-adjustments' : ''}">${header(company, company.logo)}
       <h1>QUOTATION</h1>
       <table class="recipient"><colgroup><col style="width:14%"><col style="width:1%"><col style="width:31%"><col style="width:4%"><col style="width:14%"><col style="width:1%"><col style="width:35%"></colgroup>
-        <tr><td class="label">Kepada</td><td class="colon">:</td><td class="value">${h(document.recipientName)}</td><td class="spacer"></td><td class="label right-label">Email</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.email)}</td></tr>
+        <tr><td class="label">Kepada</td><td class="colon">:</td><td class="value">${h(document.recipientName)}</td><td class="spacer"></td><td class="label right-label">Email:</td><td class="colon right-colon"></td><td class="value right-value">${h(document.email)}</td></tr>
         <tr><td class="label">Perusahaan</td><td class="colon">:</td><td class="value">${h(document.companyName)}</td><td class="spacer"></td><td class="label right-label">No Quo</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.number)}</td></tr>
         <tr><td class="label">Tlp / Fax</td><td class="colon">:</td><td class="value">${h(document.phone)}</td><td class="spacer"></td><td class="label right-label">Tanggal</td><td class="colon right-colon">:</td><td class="value right-value">${dateLong(document.date)}</td></tr>
         <tr class="address-row"><td class="label">Alamat</td><td class="colon">:</td><td class="value" colspan="5">${h(document.address)}</td></tr>
