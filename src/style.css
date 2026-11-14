@@ -275,8 +275,8 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
 .settings-trigger .icon { width: 24px; height: 24px; }
 .settings-trigger:hover { color: #2259d6; background: #edf3ff; }
 .account-menu { position: relative; }
-.account-trigger { width: 42px; height: 42px; padding: 0; display: grid; place-items: center; border: 1px solid #d7e2f2; border-radius: 50%; color: #2259d6; background: #f1f6ff; }
-.account-trigger:hover, .account-trigger[aria-expanded="true"] { border-color: #9dbaf0; color: #174fc2; background: #e8f0ff; }
+.account-trigger { width: 42px; height: 42px; padding: 0; display: grid; place-items: center; border: 1px solid #2259d6; border-radius: 50%; color: #fff; background: #2259d6; }
+.account-trigger:hover, .account-trigger[aria-expanded="true"] { border-color: #194bbd; color: #fff; background: #194bbd; }
 .account-trigger .icon { width: 22px; height: 22px; stroke-width: 2; }
 .account-popover { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; width: min(280px, calc(100vw - 24px)); padding: 8px; border: 1px solid #e0e6ef; border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgba(20,40,70,.18); }
 .account-details { padding: 10px 11px 12px; display: grid; gap: 4px; border-bottom: 1px solid #edf0f4; }
@@ -365,5 +365,5 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
   .page-content.is-report .report-table th, .page-content.is-report .report-table td { padding: 5px; font-size: 9pt; overflow-wrap: anywhere; }
 }
 
-.topbar .account-trigger { color: #2259d6; }
-.topbar .account-trigger .icon { color: #2259d6; stroke: currentColor; stroke-width: 2.5; }
+.topbar .account-trigger { color: #fff; }
+.topbar .account-trigger .icon { color: #fff; stroke: currentColor; stroke-width: 2.5; }
