@@ -28,7 +28,7 @@ const periodKey = (date = today()) => date.slice(0, 7)
 const currentPeriod = periodKey()
 const defaultCompany = {
   name: "PT. KUATEST MEGATAMA",
-  description: "Material Testing Equipment | Calibration Services | Equipment Repair \u0026 Maintenance",
+  description: "Maintenance & Repair Services",
   legal_number: "AHU-0083816.AH.01.01.TAHUN 2025",
   business_number: "3009250104971",
   address: "Komplek bukit permata cimahi, Jl. Raya Bukit Permata No.8 Blk I1, Cilame, Kec. Ngamprah, Kabupaten Bandung Barat, Jawa Barat 40552",
@@ -216,7 +216,7 @@ function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef(null)
 
-  const refresh = async () => {
+  const refresh = async (migrateLegacyTagline = false) => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
     setDocuments(savedDocuments.sort((a, b) => String(b.date).localeCompare(String(a.date))))
     setReceipts(savedReceipts.sort((a, b) => String(b.date).localeCompare(String(a.date))))
@@ -233,6 +233,10 @@ function App() {
         mergedCompany[key] = fallback
       }
     })
+    if (migrateLegacyTagline && savedCompany.description === "Material Testing Equipment | Calibration Services | Equipment Repair & Maintenance") {
+      mergedCompany.description = defaultCompany.description
+      try { await saveSettings(mergedCompany) } catch { /* retry migration on next director login */ }
+    }
     setCompany(mergedCompany)
 
   }
@@ -248,7 +252,7 @@ function App() {
         const nextProfile = await loadProfile(session.user.id)
         if (!active) return
         setWorkspace(nextProfile); setProfile(nextProfile)
-        await refresh(); setReady(true)
+        await refresh(nextProfile.role === 'director'); setReady(true)
       } catch (error) { if (active) { setMessage(error.message); setReady(true) } }
     }
     supabase.auth.getSession().then(({ data }) => openSession(data.session))
