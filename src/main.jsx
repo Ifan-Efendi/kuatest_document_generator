@@ -498,7 +498,7 @@ function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">K</div><div><strong>KUATEST MEGATAMA</strong><span>Document Generator</span></div></div>
+      <div className="brand"><div><strong>KUATEST MEGATAMA</strong><span>Document Generator</span></div></div>
       {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery('') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
