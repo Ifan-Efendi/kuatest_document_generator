@@ -157,10 +157,10 @@ export function documentPdf(document, company, fileName = '') {
       <footer class="footer">Office : ${h(company.address)}</footer></section>${equipmentPages(document)}`
     : `<section class="document-page${hasAdjustments ? ' has-adjustments' : ''}">${header(company, company.logo)}
       <h1>QUOTATION</h1>
-      <table class="recipient"><colgroup><col style="width:19%"><col style="width:1%"><col style="width:30%"><col style="width:4%"><col style="width:14%"><col style="width:1%"><col style="width:31%"></colgroup>
-        <tr><td class="label">Purchasing Email</td><td class="colon">:</td><td class="value">${h(document.email)}</td><td class="spacer"></td><td class="label right-label">No Quo</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.number)}</td></tr>
-        <tr><td class="label">Perusahaan</td><td class="colon">:</td><td class="value">${h(document.companyName)}</td><td class="spacer"></td><td class="label right-label">Tanggal</td><td class="colon right-colon">:</td><td class="value right-value">${dateLong(document.date)}</td></tr>
-        <tr><td class="label">Tlp / Fax</td><td class="colon">:</td><td class="value">${h(document.phone)}</td><td class="spacer"></td><td class="label right-label"></td><td class="colon right-colon"></td><td class="value right-value"></td></tr>
+      <table class="recipient"><colgroup><col style="width:14%"><col style="width:1%"><col style="width:31%"><col style="width:4%"><col style="width:14%"><col style="width:1%"><col style="width:35%"></colgroup>
+        <tr><td class="label">Kepada</td><td class="colon">:</td><td class="value">${h(document.recipientName)}</td><td class="spacer"></td><td class="label right-label">Purchasing Email</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.email)}</td></tr>
+        <tr><td class="label">Perusahaan</td><td class="colon">:</td><td class="value">${h(document.companyName)}</td><td class="spacer"></td><td class="label right-label">No Quo</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.number)}</td></tr>
+        <tr><td class="label">Tlp / Fax</td><td class="colon">:</td><td class="value">${h(document.phone)}</td><td class="spacer"></td><td class="label right-label">Tanggal</td><td class="colon right-colon">:</td><td class="value right-value">${dateLong(document.date)}</td></tr>
         <tr class="address-row"><td class="label">Alamat</td><td class="colon">:</td><td class="value" colspan="5">${h(document.address)}</td></tr>
       </table>
       <table class="items"><colgroup><col style="width:4.5%"><col style="width:28%"><col style="width:15.5%"><col style="width:6%"><col style="width:6%"><col style="width:20%"><col style="width:20%"></colgroup>
