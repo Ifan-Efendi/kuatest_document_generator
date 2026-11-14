@@ -26,7 +26,10 @@
         .recipient .address-row td { padding-top: 1mm; padding-bottom: 1mm; }
         .recipient .label { white-space: nowrap; text-align: left; }
         .recipient .colon { width: 2%; text-align: center; padding: 1mm 0; }
-        .recipient .value { border-bottom: 0.7px solid #222; text-align: left; padding-left: 1mm; padding-right: 1mm; }
+        .recipient .value { border-bottom: 0.7px solid #222; text-align: left; padding-left: 1mm; padding-right: 1mm; font-weight: 700; }
+        .recipient .right-label { white-space: nowrap; }
+        .recipient .right-colon { text-align: left; }
+        .recipient .right-value { padding-left: 0.5mm; }
         .recipient .spacer { border: 0; }
         table.items { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 10.5pt; }
         .items th, .items td { border: 0.7px solid #111; }
