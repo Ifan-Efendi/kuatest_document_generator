@@ -188,7 +188,6 @@ function Icon({ name }) {
     trash: <><path d="M4.5 7h15M9 7V4.5h6V7m2 0-.7 13H7.7L7 7m3.5 3v6m3-6v6"/></>,
     arrow: <><path d="M4 12h15m-6-6 6 6-6 6"/></>,
     receiptAdd: <><path d="M7 3.75h10v16.5l-2.5-1.8-2.5 1.8-2.5-1.8L7 20.25z"/><path d="M9 9.5h6M9 13h3m5 1v5m-2.5-2.5h5"/></>,
-    reports: <><path d="M4 19.5h16"/><path d="M6.5 16v-5m5 5V5.5m5 10.5v-7"/></>,
     user: <><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.5-3.3 3.3-5.3 7-5.3s6.5 2 7 5.3"/></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
   }
@@ -488,7 +487,7 @@ function App() {
 
 
   const documentType = page === 'receipt' ? 'receipt' : page
-  const title = page === 'reports' ? 'Laporan Rekap' : labels[documentType]
+  const title = labels[documentType]
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -500,7 +499,6 @@ function App() {
     <main className="main-area">
       <header className="topbar"><div className="mobile-brand">KUATEST MEGATAMA</div><div className="topbar-right">
         {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}
-        {profile.role === 'director' && <button type="button" className={`button report-nav-button${page === 'reports' ? ' active' : ''}`} onClick={() => { setPage('reports'); setQuery('') }} aria-current={page === 'reports' ? 'page' : undefined}><Icon name="reports"/><span>Laporan Rekap</span></button>}
         <div className="account-menu" ref={userMenuRef}>
           <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><Icon name="user"/></button>
           {userMenuOpen && <div className="account-popover" role="menu">
@@ -510,9 +508,8 @@ function App() {
         </div>
       </div></header>
 
-      <section className={`page-content${page === 'reports' ? ' is-report' : ''}`}>
+      <section className="page-content">
         <div className="breadcrumbs">Dokumen <span>/</span> {title}</div>
-        {page === 'reports' && <ReportView documents={documents} receipts={receipts} company={company} />}
         <div className="page-heading"><div><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
           {page === 'receipt'
             ? <button className="button primary" onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
@@ -558,22 +555,6 @@ function App() {
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
 }
-
-function ReportView({ documents, receipts, company }) {
-  const quotations = documents.filter(row => row.type === 'quotation' && row.status !== 'Draft')
-  const invoices = documents.filter(row => row.type === 'invoice')
-  const paidFor = invoice => receipts.filter(row => row.invoiceId === invoice.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
-  const date = value => value ? new Intl.DateTimeFormat('id-ID', {dateStyle:'medium',timeZone:'UTC'}).format(new Date(`${value}T12:00:00Z`)) : '-'
-  const paymentState = invoice => { const paid = paidFor(invoice); const total = docTotal(invoice); return paid <= 0 ? 'Belum Dibayar' : paid >= total ? 'Lunas' : 'DP / Sebagian' }
-  return <><div className="report-toolbar"><div><h1>Laporan Rekap Dokumen</h1><p>Rekap penawaran, invoice, dan kwitansi</p></div><button className="button primary" onClick={() => window.print()}>Cetak / Simpan PDF</button></div>
-  <article className="report-sheet"><header className="report-letterhead">{company.logo && <img src={company.logo} alt="Logo perusahaan" />}<h2>{company.name}</h2><p>{company.description}</p><p>SK Menkumham {company.legal_number} | NIB: {company.business_number}</p><p>{company.phone} | {company.email} | {company.website}</p></header>
-    <ReportTable title="Rekap Penawaran" columns={['No. Quotation','Tanggal','Perusahaan','Nominal','Status']} rows={quotations.map(q => [q.number,date(q.date),q.companyName,money(docTotal(q)),q.status || 'Terkirim'])} />
-    <ReportTable title="Rekap Invoice" columns={['No. Invoice','Tanggal','Perusahaan','Total','Dibayar','Status Pembayaran']} rows={invoices.map(i => [i.number,date(i.date),i.companyName,money(docTotal(i)),money(paidFor(i)),paymentState(i)])} />
-    <ReportTable title="Rekap Kwitansi" columns={['No. Kwitansi','Tanggal','No. Invoice','Perusahaan','Nominal','Status Pengiriman']} rows={receipts.map(r => [r.number,date(r.date),r.invoiceNumber || '-',r.receivedFrom || r.companyName,money(r.amount),r.sendStatus || 'Belum Dikirim'])} />
-    <footer className="report-address">Office: {company.address}</footer>
-  </article></>
-}
-function ReportTable({ title, columns, rows }) { return <section className="report-section"><h3>{title}</h3><div className="report-table-wrap"><table className="report-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>) : <tr><td colSpan={columns.length}>Tidak ada data untuk direkap.</td></tr>}</tbody></table></div></section> }
 
 function DocumentModal({ document, setDocument, onClose, onSave, company, documents, receipts, isExisting }) {
   const set = (key, value) => setDocument((state) => ({ ...state, [key]: value }))
