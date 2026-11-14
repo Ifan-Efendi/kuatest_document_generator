@@ -534,7 +534,6 @@ function App() {
       </div></header>
 
       <section className="page-content">
-        <div className="breadcrumbs">Dokumen <span>/</span> {title}</div>
         <div className="page-heading"><div><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
           {page === 'receipt'
             ? <button className="button primary" onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
