@@ -236,7 +236,7 @@ export function receiptPdf(receipt, invoice, company, fileName = '') {
     </table>
     <div class="bank-details"><div>${receiptStatement(receipt, company)}</div></div>
     <div class="amount"><div class="amount-band"></div><table><tr><td class="currency">Rp.</td><td class="number">${rupiah(receipt.amount)}</td></tr></table></div>
-    <div class="signatures"><div class="signature"><div>${company.city ? `${h(company.city)}, ` : ''}${dateLong(receipt.date)}</div><div class="signature-art"></div><div class="signatory-name">${h(company.invoice_signatory_name || company.name)}</div><div>Finance</div></div></div>
+    <div class="signatures"><div class="signature"><div>${company.city ? `${h(company.city)}, ` : ''}${dateLong(receipt.date)}</div><div class="signature-art">${signImages(company, receipt)}</div><div class="signatory-name">${h(company.invoice_signatory_name || company.name)}</div><div>Finance</div></div></div>
     <footer class="footer">Office : ${h(company.address)}</footer></section>`
   const pdfTitle = fileName || `${receipt.number}.pdf`
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&display=swap" rel="stylesheet">${cssDocument(receiptCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
