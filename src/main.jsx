@@ -46,7 +46,7 @@ const createId = () => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}
 const periodKey = (date = today()) => date.slice(0, 7)
 const currentPeriod = periodKey()
 const defaultCompany = {
-  name: "PT. KUATEST MEGATAMA",
+  name: "PT. KUATEST MEGA TAMA",
   description: "Material Testing Equipment | Calibration Services | Maintenance & Repair Services",
   legal_number: "AHU-0083816.AH.01.01.TAHUN 2025",
   business_number: "3009250104971",
@@ -531,13 +531,13 @@ function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div><strong>KUATEST MEGATAMA</strong><span>Document Generator</span></div></div>
+      <div className="brand"><div><strong>KUATEST MEGA TAMA</strong><span>Document Generator</span></div></div>
       {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="mobile-brand">KUATEST MEGATAMA</div><div className="topbar-right">
+      <header className="topbar"><div className="mobile-brand">KUATEST MEGA TAMA</div><div className="topbar-right">
         {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}
         <div className="account-menu" ref={userMenuRef}>
           <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><Icon name="user"/></button>

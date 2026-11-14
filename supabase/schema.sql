@@ -1,6 +1,6 @@
 -- Run in Supabase SQL Editor. Assign roles in profiles, never user metadata.
 create extension if not exists pgcrypto;
-create table public.companies(id uuid primary key default gen_random_uuid(),name text not null default 'KUATEST MEGATAMA');
+create table public.companies(id uuid primary key default gen_random_uuid(),name text not null default 'KUATEST MEGA TAMA');
 create table public.profiles(user_id uuid primary key references auth.users(id) on delete cascade,company_id uuid not null references public.companies(id),role text not null check(role in ('admin','director')),full_name text not null default '');
 create table public.documents(id uuid primary key,company_id uuid not null references public.companies(id) on delete cascade,document_type text not null check(document_type in ('quotation','invoice')),document_number text not null,payload jsonb not null,updated_by uuid references auth.users(id),unique(company_id,document_type,document_number));
 create table public.receipts(id uuid primary key,company_id uuid not null references public.companies(id) on delete cascade,document_number text not null,invoice_id uuid references public.documents(id) on delete restrict,payload jsonb not null,updated_by uuid references auth.users(id),unique(company_id,document_number));

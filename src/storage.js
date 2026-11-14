@@ -43,7 +43,7 @@ export async function importBackup(file) {
  const p = requireWorkspace()
  if (p.role !== 'director') throw new Error('Hanya direktur yang dapat mengimpor cadangan.')
  const b = JSON.parse(await file.text())
- if (b?.format !== 'kuatest-local-backup' || b?.version !== 1 || !Array.isArray(b.documents) || !Array.isArray(b.receipts)) throw new Error('File cadangan KUATEST MEGATAMA tidak valid.')
+ if (b?.format !== 'kuatest-local-backup' || b?.version !== 1 || !Array.isArray(b.documents) || !Array.isArray(b.receipts)) throw new Error('File cadangan KUATEST MEGA TAMA tidak valid.')
  const docs = b.documents.map((r) => ({ id:r.id, company_id:p.company_id, document_type:r.type, document_number:r.number, payload:r, updated_by:p.user_id }))
  const receipts = b.receipts.map((r) => ({ id:r.id, company_id:p.company_id, document_number:r.number, invoice_id:r.invoiceId || null, payload:r, updated_by:p.user_id }))
  const c = await supabase.from('receipts').delete().eq('company_id', p.company_id); fail(c.error)

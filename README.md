@@ -1,4 +1,4 @@
-# KUATEST MEGATAMA Document Generator
+# KUATEST MEGA TAMA Document Generator
 
 A document generator for quotations, invoices, and receipts using Supabase Auth and Postgres.
 
