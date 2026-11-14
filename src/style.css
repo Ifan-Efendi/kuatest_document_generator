@@ -55,7 +55,7 @@ button { cursor: pointer; }
 .status-filter select, .period-filter select { min-height: 38px; min-width: 155px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #28394f; background: #fff; font: inherit; }
 .period-filter, .date-filter { display: flex; align-items: center; gap: 8px; color: #52657f; font-size: 12px; font-weight: 600; }
 .date-filter { justify-content: flex-start; }
-.date-filter .date-input-shell { width: 210px; min-width: 210px; min-height: 38px; padding: 0 10px; }
+.date-filter .date-input-shell { width: 210px; min-width: 210px; min-height: 38px; padding: 0 10px; border: 1.5px solid #b8c5d6; }
 .date-input-shell { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 37px; padding: 8px 10px; border: 1px solid #dce2e9; border-radius: 6px; color: #2f4058; background: #fff; font-size: 12px; font-weight: 400; cursor: pointer; }
 .date-input-shell:focus-within { border-color: #6e96e4; box-shadow: 0 0 0 3px rgba(56,106,207,.09); }
 .date-input-value, .date-input-placeholder { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
