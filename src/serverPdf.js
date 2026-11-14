@@ -38,7 +38,7 @@ export async function renderPdfPayload(payload, launchOptions) {
       else outgoing.abort()
     })
 
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 45_000 })
+    await page.setContent(html, { waitUntil: 'load', timeout: 45_000 })
     await page.evaluate(() => document.fonts.ready)
     return await page.pdf({
       format: 'A4',
