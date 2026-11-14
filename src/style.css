@@ -50,6 +50,8 @@ button { cursor: pointer; }
 .search-box .icon { width: 17px; height: 17px; }
 .search-box input { width: 100%; border: 0; outline: none; color: #28394f; background: transparent; font-size: 13px; }
 .search-box input::placeholder { color: #9aa5b3; }
+.status-filter { display: flex; align-items: center; gap: 8px; color: #52657f; font-size: 12px; font-weight: 600; }
+.status-filter select { min-height: 38px; min-width: 155px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #28394f; background: #fff; font: inherit; }
 .date-filter { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; color: #52657f; font-size: 12px; font-weight: 600; }
 .date-filter select, .date-filter input { min-height: 38px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #28394f; background: #fff; font: inherit; }
 .date-filter select { min-width: 140px; }
@@ -164,6 +166,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .page-heading .button { min-height: 36px; padding: 0 10px; font-size: 11px; }
   .page-heading .button .icon { display: none; }
   .table-toolbar { min-height: 54px; padding: 9px; }
+  .status-filter { width: 100%; justify-content: space-between; }
+  .status-filter select { flex: 1; min-width: 0; }
   .date-filter { width: 100%; margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
   .date-filter select { flex: 1 1 120px; }
   .date-filter .date-input-shell { flex: 1 1 140px; width: auto; }

@@ -226,6 +226,7 @@ function App() {
   const [page, setPage] = useState('quotation')
   const [query, setQuery] = useState('')
   const [datePeriod, setDatePeriod] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [dateAnchor, setDateAnchor] = useState(today)
   const [modal, setModal] = useState(null)
   const [docForm, setDocForm] = useState(null)
@@ -308,10 +309,17 @@ function App() {
   const signOut = async () => { setUserMenuOpen(false); await supabase.auth.signOut(); setReady(false); setPage('quotation') }
 
   const items = page === 'receipt' ? receipts : documents.filter((row) => row.type === page)
+  const statusOptions = page === 'quotation'
+    ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak']
+    : page === 'invoice'
+      ? ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']
+      : ['Belum Dikirim', 'Terkirim']
   const filtered = useMemo(() => items.filter((row) => {
     const searchable = (row.number + ' ' + (row.companyName || row.receivedFrom || '') + ' ' + (row.status || '')).toLowerCase()
-    return searchable.includes(query.toLowerCase()) && matchesDatePeriod(row.date, datePeriod, dateAnchor)
-  }), [items, query, datePeriod, dateAnchor])
+    const rowStatus = page === 'receipt' ? row.sendStatus || 'Belum Dikirim' : row.status || 'Draft'
+    const matchesStatus = statusFilter === 'all' || rowStatus === statusFilter
+    return searchable.includes(query.toLowerCase()) && matchesDatePeriod(row.date, datePeriod, dateAnchor) && matchesStatus
+  }), [items, query, datePeriod, dateAnchor, statusFilter, page])
 
   if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
   if (!user || !profile || !ready) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><h1>PT. KUATEST MEGA TAMA</h1><p className="auth-subtitle">Masuk ke Document Generator</p><label className="field"><span>Email</span><input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><label className="field"><span>Kata sandi</span><input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary">Masuk</button>{message && <p role="alert">{message}</p>}</form></main>
@@ -524,7 +532,7 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div><strong>KUATEST MEGATAMA</strong><span>Document Generator</span></div></div>
-      {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery('') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
+      {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
 
@@ -548,7 +556,7 @@ function App() {
         </div>
 
         <section className="table-card">
-          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="date-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select>{datePeriod !== 'all' && <DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/>}</div></div>
+          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="status-filter"><label htmlFor="status-filter">Status</label><select id="status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></div><div className="date-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select>{datePeriod !== 'all' && <DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/>}</div></div>
           <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}<th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{filtered.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
@@ -573,7 +581,7 @@ function App() {
                 </div></td>
               </tr>
             })}
-            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{!ready ? 'Memuat data...' : (query || datePeriod !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
+            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{!ready ? 'Memuat data...' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
         </section>
 
