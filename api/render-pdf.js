@@ -52,7 +52,8 @@ export default async function handler(request, response) {
     response.setHeader('Cache-Control', 'no-store')
     response.statusCode = 200
     return response.end(pdf)
-  } catch {
+  } catch (error) {
+    console.error('[render-pdf] Gagal membuat PDF:', error)
     return response.status(500).json({ error: 'PDF gagal dibuat. Coba lagi.' })
   }
 }
