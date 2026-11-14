@@ -364,3 +364,6 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
   .page-content.is-report .report-table { width: 100%; min-width: 0; table-layout: fixed; white-space: normal; font-size: 9pt; }
   .page-content.is-report .report-table th, .page-content.is-report .report-table td { padding: 5px; font-size: 9pt; overflow-wrap: anywhere; }
 }
+
+.topbar .account-trigger { color: #174fc2; }
+.topbar .account-trigger .icon { color: #174fc2; stroke: currentColor; stroke-width: 2.5; }
