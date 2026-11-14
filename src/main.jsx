@@ -541,7 +541,6 @@ function App() {
             </tbody></table></div>
         </section>
 
-        <div className="storage-banner"><strong>Catatan:</strong><span>Data tersimpan aman di Supabase dan dapat diakses sesuai akun Anda.</span></div>
       </section>
     </main>
 

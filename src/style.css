@@ -76,10 +76,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .status-select option:checked { color: #fff; background: #2259d6; }
 .empty-row { height: 135px; color: #7b8798; text-align: center; }
 .table-foot { min-height: 45px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #8792a1; border-top: 1px solid #edf0f3; font-size: 11px; }
-.storage-banner { margin-top: auto; padding: 14px 16px; display: flex; align-items: center; gap: 7px; border: 1px solid #cfddf5; border-radius: 9px; color: #52657f; background: #f1f6ff; font-size: 11px; }
-.storage-banner strong { color: #263c5d; font-size: 12px; white-space: nowrap; }
-.storage-banner span { flex: 1; font-style: italic; }
-.storage-banner .backup-button { min-height: 34px; padding: 0 13px; font-size: 12px; }
 .toast { position: fixed; right: 24px; bottom: 24px; z-index: 100; max-width: min(440px, calc(100vw - 32px)); padding: 11px 12px 11px 15px; display: flex; align-items: center; gap: 12px; border: 1px solid #dae2ec; border-radius: 8px; color: #304057; background: #fff; box-shadow: 0 8px 30px rgba(20,40,70,.14); font-size: 12px; }
 .toast button { width: 27px; height: 27px; display: grid; place-items: center; border: 0; border-radius: 5px; color: #738096; background: transparent; }
 .toast .toast-action { width: auto; min-height: 32px; padding: 0 12px; color: #fff; border: 1px solid transparent; background: #2259d6; font-size: 12px; }
@@ -162,10 +158,6 @@ tbody tr:last-child td { border-bottom: 0; }
   td { height: 55px; padding: 9px 11px; }
   .table-foot { padding: 9px 11px; align-items: flex-start; font-size: 10px; }
   .table-foot span:first-child { max-width: 75%; }
-  .storage-banner { align-items: flex-start; flex-wrap: wrap; gap: 5px 10px; padding: 12px; line-height: 1.45; }
-  .storage-banner strong { width: 100%; }
-  .storage-banner span { flex: 1 1 70%; }
-  .storage-banner button { align-self: end; }
   .modal-backdrop { padding: 0; place-items: end center; }
   .modal, .compact-modal { width: 100%; max-height: 94vh; border-radius: 14px 14px 0 0; }
   .modal-head { min-height: 67px; padding: 12px 16px; }
@@ -211,8 +203,6 @@ td { height: 64px; font-size: 13px; }
 .status-select { min-height: 36px; font-size: 12px; }
 .empty-row { font-size: 13px; }
 .table-foot { min-height: 48px; font-size: 12px; }
-.storage-banner { font-size: 12px; }
-.storage-banner strong, .storage-banner button { font-size: 13px; }
 .field { font-size: 12px; }
 .field input, .field textarea, .field select { min-height: 40px; font-size: 13px; }
 .field input[type=file] { min-height: auto; font-size: 12px; }
