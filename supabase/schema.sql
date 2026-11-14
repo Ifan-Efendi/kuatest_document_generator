@@ -24,3 +24,5 @@ create policy settings_update on public.company_settings for update to authentic
 grant select on public.companies,public.profiles to authenticated;
 grant select,insert,update,delete on public.documents,public.receipts to authenticated;
 grant select,insert,update on public.company_settings to authenticated;
+grant execute on function public.my_company_id() to authenticated;
+grant execute on function public.my_role() to authenticated;
