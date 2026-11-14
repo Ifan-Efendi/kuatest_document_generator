@@ -338,6 +338,17 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
 .auth-card .field input { min-height: 42px; color: #263b59; font: 400 14px/1.4 'Plus Jakarta Sans', Arial, sans-serif; }
 .auth-card .button { width: 100%; min-height: 42px; font: 700 14px/1.4 'Plus Jakarta Sans', Arial, sans-serif; }
 
+/* Keep sidebar branding above the app-wide font-size normalization. */
+html .app-shell .sidebar .brand strong {
+  font-size: clamp(22px, 2.2vw, 30px);
+  letter-spacing: -.04em;
+  line-height: 1.05;
+  transform: scaleX(.75);
+}
+html .app-shell .sidebar .brand span {
+  font-size: clamp(18px, 1.5vw, 20px);
+  line-height: 1.2;
+}
 /* Report navigation sits with account actions; report tables scroll cleanly on small screens. */
 .report-nav-button { min-height: 40px; padding-inline: 12px; gap: 8px; color: #1d457f; border: 1px solid #d7e2f2; border-radius: 7px; background: #f4f7fc; font-weight: 650; }
 .report-nav-button:hover, .report-nav-button.active { color: #fff; border-color: #2259d6; background: #2259d6; }
