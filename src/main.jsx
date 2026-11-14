@@ -58,6 +58,11 @@ const defaultPaymentTerms = [
 ].join('\n')
 const months = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
 const todayAt = (date) => date || today()
+const addDaysToDate = (value, days) => {
+  const date = new Date(`${todayAt(value)}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
 const safeFilePart = (value, fallback) => String(value || fallback)
   .trim()
   .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
@@ -144,7 +149,7 @@ function newDocument(type, quotation = null, documents = [], receipts = [], base
   const date = today()
   const autoNumber = numberFor(type, date, documents, receipts, baselines)
   return {
-    id: createId(), type, number: autoNumber, autoNumber, date, dueDate: '',
+    id: createId(), type, number: autoNumber, autoNumber, date, dueDate: type === 'invoice' ? addDaysToDate(date, 14) : '',
     status: 'Draft', paymentStatus: 'DP', recipientName: quotation?.recipientName || '', companyName: quotation?.companyName || '',
     phone: '',
     workConditions: quotation?.workConditions || (type === 'quotation' ? defaultWorkConditions : ''),
@@ -359,7 +364,8 @@ function App() {
 
   const editDocument = (document) => {
     const defaultPhone = '+62 895-3445-73716'
-    setDocForm({ ...document, phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: (document.items || []).map((item) => ({ ...item })) })
+    const autoNumber = document.autoNumber || (!document.number ? numberFor(document.type, document.date, documents, receipts, company.numberBaselines) : '')
+    setDocForm({ ...document, number: document.number || autoNumber, autoNumber: document.autoNumber || autoNumber, dueDate: document.type === 'invoice' ? document.dueDate || addDaysToDate(document.date, 14) : document.dueDate || '', phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: (document.items || []).map((item) => ({ ...item })) })
     setModal('document')
   }
 
@@ -593,17 +599,20 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
           <Field label={document.type === 'quotation' ? 'No. Quotation' : 'No. Invoice'}><input value={document.number} onChange={(event) => set('number', event.target.value)} /></Field>
           <Field label="Tanggal" required><input required type="date" value={document.date} onChange={(event) => setDocument((state) => {
             const nextDate = event.target.value
+            const nextDueDate = state.type === 'invoice' && (!state.dueDate || state.dueDate === addDaysToDate(state.date, 14))
+              ? addDaysToDate(nextDate, 14)
+              : state.dueDate
             if (state.autoNumber && (!state.number || state.number === state.autoNumber)) {
               const nextNumber = numberFor(state.type, nextDate, documents, receipts, company.numberBaselines)
-              return { ...state, date: nextDate, number: state.number ? nextNumber : '', autoNumber: nextNumber }
+              return { ...state, date: nextDate, dueDate: nextDueDate, number: state.number ? nextNumber : '', autoNumber: nextNumber }
             }
-            return { ...state, date: nextDate }
+            return { ...state, date: nextDate, dueDate: nextDueDate }
           })} /></Field>
           {document.type === 'invoice' && <Field label="Jatuh tempo"><input type="date" value={document.dueDate || ''} onChange={(event) => set('dueDate', event.target.value)} /></Field>}
           <Field label="Kepada"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
           <Field label="Perusahaan" required><input required value={document.companyName} onChange={(event) => set('companyName', event.target.value)} /></Field>
           <Field label="Telepon / Fax"><input value={document.phone} onChange={(event) => set('phone', event.target.value)} /></Field>
-          <Field label="E-mail"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
+          <Field label="Email"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
           <Field label="Alamat" className="full"><textarea rows="2" value={document.address} onChange={(event) => set('address', event.target.value)} /></Field>
           {document.type === 'invoice' && <Field label="Nomor penawaran"><input value={document.quotationNumber || ''} onChange={(event) => set('quotationNumber', event.target.value)} /></Field>}
           {document.type === 'invoice' && <Field label="Jenis tagihan"><select value={document.billingStage || 'penuh'} onChange={(event) => set('billingStage', event.target.value)}><option value="penuh">Tagihan penuh</option><option value="dp">DP</option></select></Field>}
@@ -689,7 +698,7 @@ function SettingsModal({ settings, setSettings, onClose, onSave }) {
     <form className="modal compact-modal settings-modal" onSubmit={onSave}>
       <div className="modal-head"><div><h2>Identitas Perusahaan</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
       <div className="modal-body"><section className="form-section"><div className="form-grid">
-        {[['name','Nama perusahaan'],['description','Deskripsi'],['legal_number','No. SK Menkumham'],['business_number','NIB'],['phone','Telepon / Fax'],['email','E-mail'],['website','Website'],['address','Alamat kantor'],['bank_name','Nama bank'],['bank_account','Nomor rekening'],['bank_account_name','Nama pemilik rekening'],['signatory_name','Penandatangan penawaran'],['invoice_signatory_name','Penandatangan invoice / kuitansi']].map(([key,label]) => <Field key={key} label={label} className={key === 'description' || key === 'address' ? 'full' : ''}><input value={settings[key] || ''} onChange={(event) => update(key, event.target.value)}/></Field>)}
+        {[['name','Nama perusahaan'],['description','Deskripsi'],['legal_number','No. SK Menkumham'],['business_number','NIB'],['phone','Telepon / Fax'],['email','Email'],['website','Website'],['address','Alamat kantor'],['bank_name','Nama bank'],['bank_account','Nomor rekening'],['bank_account_name','Nama pemilik rekening'],['signatory_name','Penandatangan penawaran'],['invoice_signatory_name','Penandatangan invoice / kuitansi']].map(([key,label]) => <Field key={key} label={label} className={key === 'description' || key === 'address' ? 'full' : ''}><input value={settings[key] || ''} onChange={(event) => update(key, event.target.value)}/></Field>)}
         {['logo','signatureStamp'].map((key) => <Field key={key} label={{logo:'Logo',signatureStamp:'Upload Cap dan Tanda Tangan'}[key]}><input type="file" accept="image/*" onChange={(event) => image(key, event.target.files[0])}/>{settings[key] && <span className="file-status">Gambar sudah dipilih</span>}</Field>)}
       </div></section></div>
       <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="submit" className="button primary">Simpan Identitas</button></div>

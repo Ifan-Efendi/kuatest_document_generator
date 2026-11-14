@@ -34,7 +34,7 @@ function header(company, logo) {
         <div class="company-name">${h(companyName(company.name))}</div>
         <div class="company-description">${h(company.description)}</div>
         <div class="company-meta">SK Menkumham ${h(company.legal_number)} | NIB : ${h(company.business_number)}</div>
-        <div class="company-meta company-contact">${company.contactLabel || 'Contact'} : ${h(company.phone)} | E-mail : <a href="mailto:${h(company.email)}">${h(company.email)}</a></div>
+        <div class="company-meta company-contact">${company.contactLabel || 'Contact'} : ${h(company.phone)} | Email : <a href="mailto:${h(company.email)}">${h(company.email)}</a></div>
         <div class="company-website">Website : <a href="https://${h(company.website)}">${h(company.website)}</a></div>
       </td>
     </tr></table>
