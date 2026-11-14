@@ -151,7 +151,7 @@ function newDocument(type, quotation = null, documents = [], receipts = [], base
   return {
     id: createId(), type, number: autoNumber, autoNumber, date, dueDate: type === 'invoice' ? addDaysToDate(date, 14) : '',
     status: 'Draft', paymentStatus: 'DP', recipientName: quotation?.recipientName || '', companyName: quotation?.companyName || '',
-    phone: '',
+    phone: quotation?.phone || '', email: quotation?.email || '', address: quotation?.address || '',
     workConditions: quotation?.workConditions || (type === 'quotation' ? defaultWorkConditions : ''),
     paymentTerms: quotation?.paymentTerms || defaultPaymentTerms,
     quotationId: quotation?.id || '', quotationNumber: quotation?.number || '', billingStage: 'penuh',
