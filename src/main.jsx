@@ -201,6 +201,7 @@ function Icon({ name }) {
   if (name === 'xCircle') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg>
   if (name === 'chevronLeft') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
   if (name === 'chevronRight') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+  if (name === 'filter') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16l-6.3 7.4v5.4l-3.4 1.8v-7.2z"/></svg>
   if (name === 'settings') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2" fill="white"/><circle cx="9" cy="12" r="2" fill="white"/><circle cx="17" cy="18" r="2" fill="white"/></svg>
   const paths = {
     quotation: <><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></>,
@@ -217,6 +218,7 @@ function Icon({ name }) {
     trash: <><path d="M4.5 7h15M9 7V4.5h6V7m2 0-.7 13H7.7L7 7m3.5 3v6m3-6v6"/></>,
     arrow: <><path d="M4 12h15m-6-6 6 6-6 6"/></>,
     receiptAdd: <><path d="M7 3.75h10v16.5l-2.5-1.8-2.5 1.8-2.5-1.8L7 20.25z"/><path d="M9 9.5h6M9 13h3m5 1v5m-2.5-2.5h5"/></>,
+    more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
     user: <><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.5-3.3 3.3-5.3 7-5.3s6.5 2 7 5.3"/></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
   }
@@ -228,6 +230,19 @@ function statusTone(status) {
   if (status === 'Ditolak') return 'tone-rejected'
   if (['Terkirim', 'Belum Lunas', 'Belum Dikirim'].includes(status)) return 'tone-progress'
   return 'tone-draft'
+}
+
+function statusLabel(status) {
+  if (status === 'Draft' || status === 'Terkirim') return 'Dalam Proses'
+  if (status === 'Sudah Disetujui') return 'Disetujui'
+  return status
+}
+
+function statusIcon(status) {
+  if (['Sudah Disetujui', 'Disetujui', 'Lunas'].includes(status)) return 'checkCircle'
+  if (status === 'Ditolak') return 'xCircle'
+  if (['Draft', 'Terkirim', 'Belum Lunas', 'Belum Dikirim'].includes(status)) return 'clock'
+  return 'quotation'
 }
 
 function App() {
@@ -254,6 +269,8 @@ function App() {
   const [pendingPreview, setPendingPreview] = useState(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [openActionId, setOpenActionId] = useState(null)
+  const [openStatusId, setOpenStatusId] = useState(null)
   const [tablePage, setTablePage] = useState(1)
   const userMenuRef = useRef(null)
 
@@ -344,6 +361,13 @@ function App() {
   const pageSize = 5
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const visibleItems = filtered.slice((tablePage - 1) * pageSize, tablePage * pageSize)
+  const pageNumbers = pageCount <= 5
+    ? Array.from({ length: pageCount }, (_, index) => index + 1)
+    : tablePage <= 2
+      ? [1, 2, 3, pageCount]
+      : tablePage >= pageCount - 1
+        ? [1, pageCount - 2, pageCount - 1, pageCount]
+        : [1, tablePage - 1, tablePage, tablePage + 1, pageCount]
   useEffect(() => { setTablePage(1) }, [page, query, datePeriod, dateAnchor, statusFilter])
 
   if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
@@ -556,7 +580,8 @@ function App() {
 
   return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
     <aside className="sidebar">
-      <div className="brand"><img src="/assets/company-logo.png" alt="" /><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></div>
+      <svg className="sidebar-art" viewBox="0 0 296 190" preserveAspectRatio="none" aria-hidden="true"><path fill="#0754a7" d="M0 139C68 111 146 128 296 0v190H0z"/><path fill="#ffc21a" d="M0 171c84-55 174-33 296-137v24C176 163 90 145 0 190z"/><path fill="#1370c6" d="M0 155c70-35 152-12 296-87v24C158 175 75 133 0 190z"/><path fill="#0b3d82" d="M0 177c93-46 153-5 296-70v83H0z"/></svg>
+      <div className="brand"><svg className="brand-mark" viewBox="0 0 52 48" aria-hidden="true"><path fill="#fff" d="M3 3h23L10 24l16 21H3z"/><path fill="#ffc21a" d="M27 3h19L29 24l17 21H27L10 24z"/></svg><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></div>
       {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
@@ -564,11 +589,11 @@ function App() {
     <main className="main-area">
       <header className="topbar"><div className="topbar-left"><button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} title="Tampilkan/sembunyikan menu" aria-label="Tampilkan atau sembunyikan menu"><Icon name="menu"/></button><div className="mobile-brand">KUATEST MEGA TAMA</div></div><div className="topbar-right">
         <button type="button" className="notification-button" onClick={() => setMessage('Belum ada notifikasi baru.')} title="Notifikasi" aria-label="Notifikasi"><Icon name="bell"/><i/></button>
-        {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}
         <div className="account-menu" ref={userMenuRef}>
-          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><span className="account-avatar"><Icon name="user"/></span><span className="account-name">{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Admin')}</span><Icon name="chevronDown"/></button>
+          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><span className="account-avatar"><Icon name="user"/></span><span className="account-name">Admin</span><Icon name="chevronDown"/></button>
           {userMenuOpen && <div className="account-popover" role="menu">
             <div className="account-details"><strong>{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Administrator')}</strong><span>{user?.email || ''}</span><small>{profile.role === 'director' ? 'Direktur' : 'Administrator'}</small></div>
+            {profile.role === 'director' && <button type="button" className="account-menu-item" role="menuitem" onClick={() => { setUserMenuOpen(false); showSettings() }}><Icon name="settings"/>Identitas perusahaan</button>}
             <button type="button" className="account-logout" role="menuitem" onClick={signOut}><Icon name="logout"/>Keluar</button>
           </div>}
         </div>
@@ -587,31 +612,36 @@ function App() {
           <article className="summary-card approved"><span className="summary-icon"><Icon name="checkCircle"/></span><div><span>Disetujui</span><strong>{approvedCount}</strong></div><Icon name="checkCircle"/></article>
           <article className="summary-card rejected"><span className="summary-icon"><Icon name="xCircle"/></span><div><span>Ditolak</span><strong>{rejectedCount}</strong></div><Icon name="xCircle"/></article>
         </section>}
+        <section className="filter-card">
+          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="status-filter"><label htmlFor="status-filter">Status</label><select id="status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label>Tanggal</label><DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/></div><button type="button" className="filter-apply" onClick={() => setMessage('Filter diterapkan.')}><Icon name="filter"/>Terapkan</button></div>
+        </section>
         <section className="table-card">
-          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="status-filter"><label htmlFor="status-filter">Status</label><select id="status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label>Tanggal</label><DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/></div></div>
           <div className="table-scroll"><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page === 'invoice' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{visibleItems.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
               const pdfKey = `${page}:${record.id}`
               const isViewingPdf = viewingPdf === pdfKey
-              const isDownloadingPdf = downloadingPdf === pdfKey
               const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
               return <tr key={record.id}>
-                <td className="number-cell"><span className="number-content"><span className="document-chip"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></span></td>{page === 'quotation' && <><td>{record.companyName || '-'}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td><td><select className={'status-select ' + statusTone(record.status || 'Draft')} value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={'Status ' + record.number}>{['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></td><td className="amount-cell">{money(docTotal(record))}</td></>}
-                {page !== 'quotation' && <><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}<td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>{page === 'invoice' && <td><select className={'status-select ' + statusTone(record.status || 'Draft')} value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={'Status ' + record.number}>{['Draft', 'Terkirim', 'Belum Lunas', 'Lunas'].map((status) => <option key={status}>{status}</option>)}</select></td>}</>}
+                <td className="number-cell"><span className="number-content"><span className="document-chip"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></span></td>{page === 'quotation' && <><td>{record.companyName || '-'}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td><td><div className="status-badge-wrap"><button type="button" className={'status-badge ' + statusTone(record.status || 'Draft')} onClick={() => setOpenStatusId((id) => id === record.id ? null : record.id)} aria-expanded={openStatusId === record.id}><Icon name={statusIcon(record.status || 'Draft')}/><span>{statusLabel(record.status || 'Draft')}</span></button>{openStatusId === record.id && <div className="status-menu" role="listbox">{(page === 'quotation' ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'] : ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']).map((status) => <button type="button" key={status} onClick={() => { setOpenStatusId(null); changeStatus(record, status) }}><Icon name={statusIcon(status)}/>{status}</button>)}</div>}</div></td><td className="amount-cell">{money(docTotal(record))}</td></>}
+                {page !== 'quotation' && <><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}<td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>{page === 'invoice' && <td><div className="status-badge-wrap"><button type="button" className={'status-badge ' + statusTone(record.status || 'Draft')} onClick={() => setOpenStatusId((id) => id === record.id ? null : record.id)} aria-expanded={openStatusId === record.id}><Icon name={statusIcon(record.status || 'Draft')}/><span>{statusLabel(record.status || 'Draft')}</span></button>{openStatusId === record.id && <div className="status-menu" role="listbox">{['Draft', 'Terkirim', 'Belum Lunas', 'Lunas'].map((status) => <button type="button" key={status} onClick={() => { setOpenStatusId(null); changeStatus(record, status) }}><Icon name={statusIcon(status)}/>{status}</button>)}</div>}</div></td>}</>}
                 <td><div className="row-actions">
-                  <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF…' : 'View PDF'} aria-label={isViewingPdf ? 'Menyiapkan PDF untuk ditampilkan' : 'View PDF'} disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
-                  <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF…' : 'Unduh PDF'} aria-label={isDownloadingPdf ? 'Mengunduh PDF' : 'Unduh PDF'} disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
-                  <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
-                  {page === 'quotation' && <button className="icon-button" title="Buat invoice dari penawaran" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>}
-                  {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
-                  {profile.role === 'director' && <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
+                  <button className={'icon-button' + (isViewingPdf ? ' is-loading' : '')} title={isViewingPdf ? 'Menyiapkan PDF' : 'Lihat PDF'} aria-label={isViewingPdf ? 'Menyiapkan PDF untuk ditampilkan' : 'Lihat PDF'} disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
+                  <button className="icon-button" title="Ubah" aria-label="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
+                  <div className="row-more"><button type="button" className="icon-button" title="Aksi lainnya" aria-label="Aksi lainnya" aria-expanded={openActionId === record.id} onClick={() => setOpenActionId((id) => id === record.id ? null : record.id)}><Icon name="more"/></button>
+                    {openActionId === record.id && <div className="row-action-menu" role="menu">
+                      <button type="button" role="menuitem" disabled={isPdfBusy} onClick={() => { setOpenActionId(null); downloadRecordPdf(record) }}><Icon name="download"/>Unduh PDF</button>
+                      {page === 'quotation' && <button type="button" role="menuitem" onClick={() => { setOpenActionId(null); createInvoiceFrom(record) }}><Icon name="arrow"/>Buat invoice</button>}
+                      {page === 'invoice' && <button type="button" role="menuitem" onClick={() => { setOpenActionId(null); startReceipt(record) }}><Icon name="receiptAdd"/>Buat kwitansi</button>}
+                      {profile.role === 'director' && <button type="button" role="menuitem" className="danger" onClick={() => { setOpenActionId(null); remove(record, page === 'receipt' ? 'receipts' : 'documents') }}><Icon name="trash"/>Hapus</button>}
+                    </div>}
+                  </div>
                 </div></td>
               </tr>
             })}
             {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{!ready ? 'Memuat data...' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
-          <div className="table-foot"><span>Menampilkan {filtered.length ? (tablePage - 1) * pageSize + 1 : 0}{String.fromCharCode(8211)}{Math.min(tablePage * pageSize, filtered.length)} dari {filtered.length} data</span><div className="pagination"><button type="button" disabled={tablePage <= 1} onClick={() => setTablePage((value) => Math.max(1, value - 1))} aria-label="Halaman sebelumnya"><Icon name="chevronLeft"/></button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - tablePage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="page-ellipsis">{'\u2026'}</span>}<button type="button" className={tablePage === number ? 'current' : ''} onClick={() => setTablePage(number)} aria-current={tablePage === number ? 'page' : undefined}>{number}</button></React.Fragment>)}<button type="button" disabled={tablePage >= pageCount} onClick={() => setTablePage((value) => Math.min(pageCount, value + 1))} aria-label="Halaman berikutnya"><Icon name="chevronRight"/></button></div></div>
+          <div className="table-foot"><span>Menampilkan {filtered.length ? (tablePage - 1) * pageSize + 1 : 0}{String.fromCharCode(8211)}{Math.min(tablePage * pageSize, filtered.length)} dari {filtered.length} data</span><div className="pagination"><button type="button" disabled={tablePage <= 1} onClick={() => setTablePage((value) => Math.max(1, value - 1))} aria-label="Halaman sebelumnya"><Icon name="chevronLeft"/></button>{pageNumbers.map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="page-ellipsis">{'\u2026'}</span>}<button type="button" className={tablePage === number ? 'current' : ''} onClick={() => setTablePage(number)} aria-current={tablePage === number ? 'page' : undefined}>{number}</button></React.Fragment>)}<button type="button" disabled={tablePage >= pageCount} onClick={() => setTablePage((value) => Math.min(pageCount, value + 1))} aria-label="Halaman berikutnya"><Icon name="chevronRight"/></button></div></div>
         </section>
 
       </section>
