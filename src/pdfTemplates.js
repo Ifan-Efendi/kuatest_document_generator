@@ -13,7 +13,7 @@ const cssDocument = (css) => `<style>${css}
   .company-rule span:nth-child(3) { top: 0.9mm; }
   .company-header .logo { transform: translateX(2mm); }
   .company-identity .company-name { width: 100%; text-align: center; }
-  .company-identity .company-description { display: block; width: 100%; font-size: 10.5pt; letter-spacing: -0.1pt; word-spacing: -0.5pt; white-space: nowrap; overflow-wrap: normal; text-align: center; }
+  .company-identity .company-description { display: block; width: 100%; font-size: 10.5pt; letter-spacing: -0.1pt; word-spacing: -0.5pt; white-space: nowrap; overflow-wrap: normal; text-align: center; transform: translateX(-2mm); }
   .invoice-page .items .summary td[colspan="4"] { border: 0; }
   .invoice-info .label, .invoice-info .right-label { width: 14%; }
   .invoice-info .colon { width: 1%; }
@@ -158,7 +158,7 @@ export function documentPdf(document, company, fileName = '') {
     : `<section class="document-page${hasAdjustments ? ' has-adjustments' : ''}">${header(company, company.logo)}
       <h1>QUOTATION</h1>
       <table class="recipient"><colgroup><col style="width:14%"><col style="width:1%"><col style="width:31%"><col style="width:4%"><col style="width:14%"><col style="width:1%"><col style="width:35%"></colgroup>
-        <tr><td class="label">Kepada</td><td class="colon">:</td><td class="value">${h(document.recipientName)}</td><td class="spacer"></td><td class="label right-label">Purchasing Email</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.email)}</td></tr>
+        <tr><td class="label">Kepada</td><td class="colon">:</td><td class="value">${h(document.recipientName)}</td><td class="spacer"></td><td class="label right-label">Email</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.email)}</td></tr>
         <tr><td class="label">Perusahaan</td><td class="colon">:</td><td class="value">${h(document.companyName)}</td><td class="spacer"></td><td class="label right-label">No Quo</td><td class="colon right-colon">:</td><td class="value right-value">${h(document.number)}</td></tr>
         <tr><td class="label">Tlp / Fax</td><td class="colon">:</td><td class="value">${h(document.phone)}</td><td class="spacer"></td><td class="label right-label">Tanggal</td><td class="colon right-colon">:</td><td class="value right-value">${dateLong(document.date)}</td></tr>
         <tr class="address-row"><td class="label">Alamat</td><td class="colon">:</td><td class="value" colspan="5">${h(document.address)}</td></tr>
