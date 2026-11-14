@@ -340,13 +340,13 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
 
 /* Keep sidebar branding above the app-wide font-size normalization. */
 html .app-shell .sidebar .brand strong {
-  font-size: 24px;
-  letter-spacing: -.04em;
-  line-height: 1.15;
+  font-size: 20px;
+  letter-spacing: 0;
+  line-height: 1.2;
   transform: none;
 }
 html .app-shell .sidebar .brand span {
-  font-size: clamp(18px, 1.5vw, 20px);
+  font-size: 16px;
   line-height: 1.2;
 }
 /* Report navigation sits with account actions; report tables scroll cleanly on small screens. */
