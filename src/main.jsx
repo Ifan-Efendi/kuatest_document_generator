@@ -612,7 +612,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
           <Field label="Kepada"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
           <Field label="Perusahaan" required><input required value={document.companyName} onChange={(event) => set('companyName', event.target.value)} /></Field>
           <Field label="Telepon / Fax"><input value={document.phone} onChange={(event) => set('phone', event.target.value)} /></Field>
-          <Field label="Email"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
+          <Field label="Purchasing Email"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
           <Field label="Alamat" className="full"><textarea rows="2" value={document.address} onChange={(event) => set('address', event.target.value)} /></Field>
           {document.type === 'invoice' && <Field label="Nomor penawaran"><input value={document.quotationNumber || ''} onChange={(event) => set('quotationNumber', event.target.value)} /></Field>}
           {document.type === 'invoice' && <Field label="Jenis tagihan"><select value={document.billingStage || 'penuh'} onChange={(event) => set('billingStage', event.target.value)}><option value="penuh">Tagihan penuh</option><option value="dp">DP</option></select></Field>}
