@@ -667,10 +667,16 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
 }
 
 function DateInput({ value, onChange, required = false, ariaLabel }) {
+  const openPicker = (event) => {
+    const input = event.currentTarget
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker() } catch { input.focus() }
+    }
+  }
   return <span className="date-input-shell">
     <span className={value ? 'date-input-value' : 'date-input-placeholder'}>{formatLongDate(value) || 'Pilih tanggal'}</span>
     <Icon name="calendar"/>
-    <input className="date-input-native" type="date" value={value || ''} onChange={(event) => onChange(event.target.value)} required={required} aria-label={ariaLabel}/>
+    <input className="date-input-native" type="date" value={value || ''} onClick={openPicker} onChange={(event) => onChange(event.target.value)} required={required} aria-label={ariaLabel}/>
   </span>
 }
 function Field({ label, required = false, className = '', children }) {
