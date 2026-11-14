@@ -13,7 +13,7 @@
         .company-meta, .company-website { margin-top: 0.35mm; }
         .company-contact { white-space: nowrap; }
         .company-identity a { color: #123eaa; text-decoration: underline; }
-        .company-rule { height: 1.1mm; position: relative; margin: 4mm 0 3mm; }
+        .company-rule { height: 1.1mm; position: relative; margin: 3mm 0 3mm; }
         .company-rule span { position: absolute; left: 0; right: 0; border-top: 0.2mm solid #111; }
         .company-rule span:nth-child(1) { top: 0; }
         .company-rule span:nth-child(2) { top: 0.25mm; border-top-width: 0.6mm; }
