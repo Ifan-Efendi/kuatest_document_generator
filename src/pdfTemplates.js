@@ -12,8 +12,9 @@ const cssDocument = (css) => `<style>${css}
   .company-rule span:nth-child(2) { top: 0.25mm; border-top-width: 0.6mm; }
   .company-rule span:nth-child(3) { top: 0.9mm; }
   .company-header .logo { transform: translateX(2mm); }
+  .company-identity { transform: translateX(-2mm); }
   .company-identity .company-name { width: 100%; text-align: center; }
-  .company-identity .company-description { display: block; width: 100%; font-size: 10.5pt; letter-spacing: -0.1pt; word-spacing: -0.5pt; white-space: nowrap; overflow-wrap: normal; text-align: center; transform: translateX(-4mm); }
+  .company-identity .company-description { display: block; width: 100%; font-size: 10.5pt; letter-spacing: -0.1pt; word-spacing: -0.5pt; white-space: nowrap; overflow-wrap: normal; text-align: center; }
   .invoice-page .items .summary td[colspan="4"] { border: 0; }
   .invoice-info .label, .invoice-info .right-label { width: 14%; }
   .invoice-info .colon { width: 1%; }
