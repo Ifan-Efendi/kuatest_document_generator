@@ -575,6 +575,8 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
   const addItem = () => setDocument((state) => ({ ...state, items: [...state.items, { id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }] }))
   const removeItem = (id) => setDocument((state) => ({ ...state, items: state.items.filter((item) => item.id !== id) }))
   const total = docTotal(document)
+  const downPayment = Math.min(total, Math.max(0, Number(document.downPaymentAmount || 0)))
+  const remainingAfterDownPayment = Math.max(0, Math.round((total - downPayment) * 100) / 100)
   const readImage = (file, callback) => {
     if (!file) return
     if (file.size > 3 * 1024 * 1024) return window.alert('Ukuran gambar maksimal 3 MB.')
@@ -605,7 +607,6 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
           <Field label="Alamat" className="full"><textarea rows="2" value={document.address} onChange={(event) => set('address', event.target.value)} /></Field>
           {document.type === 'invoice' && <Field label="Nomor penawaran"><input value={document.quotationNumber || ''} onChange={(event) => set('quotationNumber', event.target.value)} /></Field>}
           {document.type === 'invoice' && <Field label="Jenis tagihan"><select value={document.billingStage || 'penuh'} onChange={(event) => set('billingStage', event.target.value)}><option value="penuh">Tagihan penuh</option><option value="dp">DP</option></select></Field>}
-          {document.type === 'invoice' && document.billingStage === 'dp' && <Field label="Nominal DP"><AmountInput value={document.downPaymentAmount || ''} onValueChange={(value) => set('downPaymentAmount', value)} /></Field>}
         </div></section>
 
         <section className="form-section"><div className="section-head"><div><h3>Barang / jasa</h3><p>Masukkan nama alat.</p></div></div>
@@ -625,6 +626,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
           {document.type === 'quotation' && <><Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field><Field label="PPN nominal (jika tanpa tarif)"><AmountInput value={document.vatAmount || 0} onValueChange={(value) => set('vatAmount', value)} /></Field></>}
           {document.type === 'invoice' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
           <Field label="Grand Total"><output className="total-output">{money(total)}</output></Field>
+          {document.type === 'invoice' && document.billingStage === 'dp' && <><Field label="Nominal DP"><AmountInput value={document.downPaymentAmount || ''} onValueChange={(value) => set('downPaymentAmount', value)} /></Field><Field label="Sisa Tagihan"><output className="field-output total-output">{money(remainingAfterDownPayment)}</output></Field></>}
         </div></section>
 
         {document.type === 'quotation' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Kondisi perjanjian kerja" className="full"><textarea rows="5" value={document.workConditions || ''} onChange={(event) => set('workConditions', event.target.value)} /></Field><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
