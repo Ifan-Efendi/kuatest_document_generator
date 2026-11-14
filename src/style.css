@@ -12,8 +12,8 @@ button { cursor: pointer; }
 .brand > div { width: 100%; }
 
 .brand strong, .brand span { display: block; }
-.brand strong { color: white; font-size: 18px; font-weight: 800; letter-spacing: .01em; white-space: nowrap; }
-.brand span { margin-top: 4px; color: #c1d0e5; font-size: 15px; font-weight: 700; }
+.brand strong { color: white; font-size: clamp(17px, 1.45vw, 20px); font-weight: 800; letter-spacing: .01em; white-space: nowrap; }
+.brand span { margin-top: 4px; color: #c1d0e5; font-size: clamp(15px, 1.25vw, 17px); font-weight: 700; }
 .nav-section-label { padding: 0 12px 9px; color: #8ea4c2; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
 .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 42px; margin: 2px 0; padding: 0 12px; border: 0; border-radius: 7px; color: #cbd7e9; background: transparent; text-align: left; font-size: 13px; font-weight: 500; }
 .nav-item:hover { color: #fff; background: rgba(255,255,255,.07); }
