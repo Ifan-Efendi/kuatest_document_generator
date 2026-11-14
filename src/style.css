@@ -46,7 +46,7 @@ button { cursor: pointer; }
 .page-heading p { margin: 6px 0 0; color: #748196; font-size: 13px; }
 .table-card { overflow: hidden; border: 1px solid #e0e5ec; border-radius: 11px; background: white; box-shadow: 0 2px 5px rgba(22,42,70,.025); }
 .table-toolbar { min-height: 62px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e8ebef; }
-.search-box { display: flex; align-items: center; gap: 9px; width: min(100%, 320px); height: 38px; padding: 0 10px; border: 1px solid #dbe1e8; border-radius: 7px; color: #8a96a5; }
+.search-box { display: flex; align-items: center; gap: 9px; width: min(100%, 320px); height: 38px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #8a96a5; }
 .search-box .icon { width: 17px; height: 17px; }
 .search-box input { width: 100%; border: 0; outline: none; color: #28394f; background: transparent; font-size: 13px; }
 .search-box input::placeholder { color: #9aa5b3; }
