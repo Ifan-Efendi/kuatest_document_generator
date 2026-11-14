@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { loadProfile, supabase, supabaseConfigured } from './supabase'
 import { createRoot } from 'react-dom/client'
 import {
@@ -9,11 +9,9 @@ import {
 } from './pdfTemplates'
 import {
   deleteRecord,
-  exportBackup,
   getDocuments,
   getReceipts,
   getSettings,
-  importBackup,
   saveDocument,
   saveReceipt,
   saveSettings,
@@ -185,6 +183,8 @@ function Icon({ name }) {
     trash: <><path d="M4.5 7h15M9 7V4.5h6V7m2 0-.7 13H7.7L7 7m3.5 3v6m3-6v6"/></>,
     arrow: <><path d="M4 12h15m-6-6 6 6-6 6"/></>,
     receiptAdd: <><path d="M7 3.75h10v16.5l-2.5-1.8-2.5 1.8-2.5-1.8L7 20.25z"/><path d="M9 9.5h6M9 13h3m5 1v5m-2.5-2.5h5"/></>,
+    user: <><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.5-3.3 3.3-5.3 7-5.3s6.5 2 7 5.3"/></>,
+    logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
   }
   return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
@@ -208,6 +208,8 @@ function App() {
   const [downloadingPdf, setDownloadingPdf] = useState(null)
   const [viewingPdf, setViewingPdf] = useState(null)
   const [pendingPreview, setPendingPreview] = useState(null)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef(null)
 
   const refresh = async () => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
@@ -249,12 +251,27 @@ function App() {
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [])
 
+  useEffect(() => {
+    const closeOutside = (event) => {
+      if (!userMenuRef.current?.contains(event.target)) setUserMenuOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setUserMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
+
   const signIn = async (event) => {
     event.preventDefault(); setMessage('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setMessage('Email atau kata sandi tidak sesuai.')
   }
-  const signOut = async () => { await supabase.auth.signOut(); setReady(false); setPage('quotation') }
+  const signOut = async () => { setUserMenuOpen(false); await supabase.auth.signOut(); setReady(false); setPage('quotation') }
 
   const items = page === 'receipt' ? receipts : documents.filter((row) => row.type === page)
   const filtered = useMemo(() => items.filter((row) => `${row.number} ${row.companyName || row.receivedFrom || ''} ${row.status || ''}`.toLowerCase().includes(query.toLowerCase())), [items, query])
@@ -462,28 +479,6 @@ function App() {
     setMessage('Identitas perusahaan tersimpan.')
   }
 
-  const backup = async () => {
-    const blob = await exportBackup()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `kuatest-cadangan-${today()}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const restore = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!window.confirm('Impor cadangan akan mengganti seluruh data lokal browser ini. Lanjutkan?')) return
-    try {
-      await importBackup(file)
-      await refresh()
-      setMessage('Cadangan berhasil dipulihkan.')
-    } catch (error) {
-      setMessage(error.message || 'File cadangan gagal dibaca.')
-    } finally { event.target.value = '' }
-  }
 
   const documentType = page === 'receipt' ? 'receipt' : page
   const title = page === 'reports' ? 'Laporan Rekap' : labels[documentType]
@@ -497,9 +492,14 @@ function App() {
 
     <main className="main-area">
       <header className="topbar"><div className="mobile-brand">KUATEST MEGATAMA</div><div className="topbar-right">
-        {profile.role === 'director' && <label className="file-control"><Icon name="download"/><span>Impor</span><input type="file" accept="application/json,.json" onChange={restore}/></label>}
-        {profile.role === 'director' && <button className="button subtle" onClick={backup}><Icon name="download"/><span>Cadangkan</span></button>}
-        {profile.role === 'director' && <button type="button" className="avatar" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}<span className="user-role">{profile.role === 'director' ? 'Direktur' : 'Admin'}</span><button className="button subtle" onClick={signOut}>Keluar</button>
+        {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}
+        <div className="account-menu" ref={userMenuRef}>
+          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><Icon name="user"/></button>
+          {userMenuOpen && <div className="account-popover" role="menu">
+            <div className="account-details"><strong>{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Admin')}</strong><span>{user?.email || ''}</span><small>{profile.role === 'director' ? 'Direktur' : 'Admin'}</small></div>
+            <button type="button" className="account-logout" role="menuitem" onClick={signOut}><Icon name="logout"/>Keluar</button>
+          </div>}
+        </div>
       </div></header>
 
       <section className={`page-content${page === 'reports' ? ' is-report' : ''}`}>
@@ -541,7 +541,7 @@ function App() {
             </tbody></table></div>
         </section>
 
-        <div className="storage-banner"><strong>Catatan:</strong><span>Data tersimpan aman di Supabase dan dapat diakses sesuai akun Anda.</span>{profile.role === 'director' && <button className="button primary backup-button" onClick={backup}>Buat cadangan</button>}</div>
+        <div className="storage-banner"><strong>Catatan:</strong><span>Data tersimpan aman di Supabase dan dapat diakses sesuai akun Anda.</span></div>
       </section>
     </main>
 

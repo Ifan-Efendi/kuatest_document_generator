@@ -278,3 +278,26 @@ html .app-shell :not(h1, h2, h3, h4, h5, h6) { font-size: 14px; }
 .page-content.is-report>.breadcrumbs,.page-content.is-report>.page-heading,.page-content.is-report>.table-card{display:none}.report-toolbar{display:flex;justify-content:space-between;align-items:center;margin:8px 0 18px}.report-sheet{background:white;border:1px solid #e0e5ec;border-radius:10px;padding:24px;color:#111}.report-letterhead{text-align:center;border-bottom:3px double #111;padding:0 0 12px;margin-bottom:15px}.report-letterhead img{max-height:65px;max-width:100px;object-fit:contain}.report-letterhead h2{margin:4px;color:#123eaa}.report-letterhead p{margin:3px;font-size:12px}.report-section{margin:18px 0}.report-section h3{text-align:center}.report-sheet table{width:100%;border-collapse:collapse;font:12px Arial,sans-serif;white-space:normal}.report-sheet th,.report-sheet td{border:1px solid #111;padding:7px;text-align:left;color:#111;background:#fff;font-size:12px}.report-sheet th{background:#ffc000;text-align:center}.report-address{margin-top:22px;padding-top:8px;border-top:1px solid #111;text-align:center;font-size:12px}@media print{body *{visibility:hidden}.report-sheet,.report-sheet *{visibility:visible}.report-sheet{position:absolute;inset:0;border:0;padding:0 15mm;width:210mm}.report-toolbar{display:none}.report-section{break-inside:avoid}.report-sheet table{font-size:10.5pt}.report-sheet th,.report-sheet td{font-size:10.5pt}}
 
 .auth-screen{min-height:100vh;display:grid;place-items:center;padding:20px;background:#f4f6f9}.auth-card{width:min(420px,100%);padding:30px;display:grid;gap:16px;border:1px solid #e0e5ec;border-radius:12px;background:#fff;box-shadow:0 8px 30px #142b4912}.auth-card h1{margin:0;color:#142b49;font-size:22px}.auth-card p{margin:0;color:#64748b;font-size:13px;line-height:1.6}.user-role{color:#52657f;font-size:12px;font-weight:600}
+
+/* Account menu and company settings action in the top bar. */
+.topbar-right { gap: 11px; }
+.settings-trigger { width: 40px; height: 40px; color: #173b70; }
+.settings-trigger .icon { width: 24px; height: 24px; }
+.settings-trigger:hover { color: #2259d6; background: #edf3ff; }
+.account-menu { position: relative; }
+.account-trigger { width: 42px; height: 42px; padding: 0; display: grid; place-items: center; border: 1px solid #d7e2f2; border-radius: 50%; color: #17468f; background: #f1f6ff; }
+.account-trigger:hover, .account-trigger[aria-expanded="true"] { border-color: #9dbaf0; color: #174fc2; background: #e8f0ff; }
+.account-trigger .icon { width: 22px; height: 22px; stroke-width: 2; }
+.account-popover { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; width: min(280px, calc(100vw - 24px)); padding: 8px; border: 1px solid #e0e6ef; border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgba(20,40,70,.18); }
+.account-details { padding: 10px 11px 12px; display: grid; gap: 4px; border-bottom: 1px solid #edf0f4; }
+.account-details strong { overflow: hidden; color: #1d3352; text-overflow: ellipsis; white-space: nowrap; }
+.account-details span { overflow: hidden; color: #64748b; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.account-details small { color: #2259d6; font-size: 11px; font-weight: 700; }
+.account-logout { width: 100%; min-height: 42px; margin-top: 5px; padding: 0 11px; display: flex; align-items: center; gap: 9px; border: 0; border-radius: 7px; color: #9b3434; background: transparent; text-align: left; font-weight: 600; }
+.account-logout:hover { color: #8d2424; background: #fff1f1; }
+.account-logout .icon { width: 18px; height: 18px; }
+@media (max-width: 700px) {
+  .topbar-right { gap: 6px; }
+  .settings-trigger { width: 36px; height: 36px; }
+  .account-trigger { width: 38px; height: 38px; }
+}
