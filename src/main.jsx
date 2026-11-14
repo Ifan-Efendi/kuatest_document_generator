@@ -193,6 +193,14 @@ function newReceipt(invoice, documents, receipts, baselines = {}) {
 }
 
 function Icon({ name }) {
+  if (name === 'menu') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  if (name === 'bell') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+  if (name === 'chevronDown') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+  if (name === 'clock') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+  if (name === 'checkCircle') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+  if (name === 'xCircle') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg>
+  if (name === 'chevronLeft') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+  if (name === 'chevronRight') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
   if (name === 'settings') return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2" fill="white"/><circle cx="9" cy="12" r="2" fill="white"/><circle cx="17" cy="18" r="2" fill="white"/></svg>
   const paths = {
     quotation: <><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></>,
@@ -213,6 +221,13 @@ function Icon({ name }) {
     logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
   }
   return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
+}
+
+function statusTone(status) {
+  if (['Sudah Disetujui', 'Disetujui', 'Lunas'].includes(status)) return 'tone-approved'
+  if (status === 'Ditolak') return 'tone-rejected'
+  if (['Terkirim', 'Belum Lunas', 'Belum Dikirim'].includes(status)) return 'tone-progress'
+  return 'tone-draft'
 }
 
 function App() {
@@ -238,6 +253,8 @@ function App() {
   const [viewingPdf, setViewingPdf] = useState(null)
   const [pendingPreview, setPendingPreview] = useState(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [tablePage, setTablePage] = useState(1)
   const userMenuRef = useRef(null)
 
   const refresh = async (canPersistTagline = false) => {
@@ -320,6 +337,14 @@ function App() {
     const matchesStatus = statusFilter === 'all' || rowStatus === statusFilter
     return searchable.includes(query.toLowerCase()) && matchesDatePeriod(row.date, datePeriod, dateAnchor) && matchesStatus
   }), [items, query, datePeriod, dateAnchor, statusFilter, page])
+  const quotationRows = documents.filter((row) => row.type === 'quotation')
+  const inProgressCount = quotationRows.filter((row) => !['Sudah Disetujui', 'Disetujui', 'Ditolak'].includes(row.status)).length
+  const approvedCount = quotationRows.filter((row) => ['Sudah Disetujui', 'Disetujui'].includes(row.status)).length
+  const rejectedCount = quotationRows.filter((row) => row.status === 'Ditolak').length
+  const pageSize = 5
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const visibleItems = filtered.slice((tablePage - 1) * pageSize, tablePage * pageSize)
+  useEffect(() => { setTablePage(1) }, [page, query, datePeriod, dateAnchor, statusFilter])
 
   if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
   if (!user || !profile || !ready) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><h1>PT. KUATEST MEGA TAMA</h1><p className="auth-subtitle">Masuk ke Document Generator</p><label className="field"><span>Email</span><input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><label className="field"><span>Kata sandi</span><input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary">Masuk</button>{message && <p role="alert">{message}</p>}</form></main>
@@ -529,18 +554,19 @@ function App() {
   const documentType = page === 'receipt' ? 'receipt' : page
   const title = labels[documentType]
 
-  return <div className="app-shell">
+  return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
     <aside className="sidebar">
-      <div className="brand"><div><strong>KUATEST MEGA TAMA</strong><span>Document Generator</span></div></div>
+      <div className="brand"><img src="/assets/company-logo.png" alt="" /><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></div>
       {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="mobile-brand">KUATEST MEGA TAMA</div><div className="topbar-right">
+      <header className="topbar"><div className="topbar-left"><button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} title="Tampilkan/sembunyikan menu" aria-label="Tampilkan atau sembunyikan menu"><Icon name="menu"/></button><div className="mobile-brand">KUATEST MEGA TAMA</div></div><div className="topbar-right">
+        <button type="button" className="notification-button" onClick={() => setMessage('Belum ada notifikasi baru.')} title="Notifikasi" aria-label="Notifikasi"><Icon name="bell"/><i/></button>
         {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}
         <div className="account-menu" ref={userMenuRef}>
-          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><Icon name="user"/></button>
+          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><span className="account-avatar"><Icon name="user"/></span><span className="account-name">{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Admin')}</span><Icon name="chevronDown"/></button>
           {userMenuOpen && <div className="account-popover" role="menu">
             <div className="account-details"><strong>{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Administrator')}</strong><span>{user?.email || ''}</span><small>{profile.role === 'director' ? 'Direktur' : 'Administrator'}</small></div>
             <button type="button" className="account-logout" role="menuitem" onClick={signOut}><Icon name="logout"/>Keluar</button>
@@ -555,22 +581,24 @@ function App() {
             : <button type="button" className="button primary" onClick={() => startDocument(page)}><Icon name="plus"/>Buat {title}</button>}
         </div>
 
+        {page === 'quotation' && <section className="summary-grid" aria-label="Ringkasan penawaran">
+          <article className="summary-card total"><span className="summary-icon"><Icon name="quotation"/></span><div><span>Total Penawaran</span><strong>{quotationRows.length}</strong></div><Icon name="quotation"/></article>
+          <article className="summary-card progress"><span className="summary-icon"><Icon name="clock"/></span><div><span>Dalam Proses</span><strong>{inProgressCount}</strong></div><Icon name="clock"/></article>
+          <article className="summary-card approved"><span className="summary-icon"><Icon name="checkCircle"/></span><div><span>Disetujui</span><strong>{approvedCount}</strong></div><Icon name="checkCircle"/></article>
+          <article className="summary-card rejected"><span className="summary-icon"><Icon name="xCircle"/></span><div><span>Ditolak</span><strong>{rejectedCount}</strong></div><Icon name="xCircle"/></article>
+        </section>}
         <section className="table-card">
           <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="status-filter"><label htmlFor="status-filter">Status</label><select id="status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label>Tanggal</label><DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/></div></div>
-          <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}<th className="actions-heading">Aksi</th></tr></thead>
-            <tbody>{filtered.map((record) => {
+          <div className="table-scroll"><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page === 'invoice' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
+            <tbody>{visibleItems.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
               const pdfKey = `${page}:${record.id}`
               const isViewingPdf = viewingPdf === pdfKey
               const isDownloadingPdf = downloadingPdf === pdfKey
               const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
               return <tr key={record.id}>
-                <td className="number-cell">{record.number}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>
-                {page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
-                <td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
-                {page !== 'receipt' && <td><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
-                  {(page === 'quotation' ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'] : ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']).map((status) => <option key={status}>{status}</option>)}
-                </select></td>}
+                <td className="number-cell"><span className="number-content"><span className="document-chip"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></span></td>{page === 'quotation' && <><td>{record.companyName || '-'}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td><td><select className={'status-select ' + statusTone(record.status || 'Draft')} value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={'Status ' + record.number}>{['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></td><td className="amount-cell">{money(docTotal(record))}</td></>}
+                {page !== 'quotation' && <><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}<td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>{page === 'invoice' && <td><select className={'status-select ' + statusTone(record.status || 'Draft')} value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={'Status ' + record.number}>{['Draft', 'Terkirim', 'Belum Lunas', 'Lunas'].map((status) => <option key={status}>{status}</option>)}</select></td>}</>}
                 <td><div className="row-actions">
                   <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF…' : 'View PDF'} aria-label={isViewingPdf ? 'Menyiapkan PDF untuk ditampilkan' : 'View PDF'} disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
                   <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF…' : 'Unduh PDF'} aria-label={isDownloadingPdf ? 'Mengunduh PDF' : 'Unduh PDF'} disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
@@ -583,6 +611,7 @@ function App() {
             })}
             {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{!ready ? 'Memuat data...' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
+          <div className="table-foot"><span>Menampilkan {filtered.length ? (tablePage - 1) * pageSize + 1 : 0}{String.fromCharCode(8211)}{Math.min(tablePage * pageSize, filtered.length)} dari {filtered.length} data</span><div className="pagination"><button type="button" disabled={tablePage <= 1} onClick={() => setTablePage((value) => Math.max(1, value - 1))} aria-label="Halaman sebelumnya"><Icon name="chevronLeft"/></button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - tablePage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="page-ellipsis">{'\u2026'}</span>}<button type="button" className={tablePage === number ? 'current' : ''} onClick={() => setTablePage(number)} aria-current={tablePage === number ? 'page' : undefined}>{number}</button></React.Fragment>)}<button type="button" disabled={tablePage >= pageCount} onClick={() => setTablePage((value) => Math.min(pageCount, value + 1))} aria-label="Halaman berikutnya"><Icon name="chevronRight"/></button></div></div>
         </section>
 
       </section>
