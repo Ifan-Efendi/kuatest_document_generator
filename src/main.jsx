@@ -36,6 +36,12 @@ const matchesDatePeriod = (recordDate, period, referenceDate) => {
   end.setUTCDate(end.getUTCDate() + 7)
   return date >= start && date < end
 }
+const formatLongDate = (value) => {
+  if (!value) return ''
+  const date = new Date(value + 'T12:00:00Z')
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date)
+}
 const createId = () => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
 const periodKey = (date = today()) => date.slice(0, 7)
 const currentPeriod = periodKey()
@@ -192,6 +198,7 @@ function Icon({ name }) {
     quotation: <><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></>,
     invoice: <><path d="M6.5 3.75h11v16.5h-11z"/><path d="M9 8h6M9 11.5h6M9 15h3"/></>,
     receipt: <><path d="M7 3.75h10v16.5l-2.5-1.8-2.5 1.8-2.5-1.8L7 20.25z"/><path d="M9.5 9.5h5M9.5 13h5"/></>,
+    calendar: <><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></>,
     search: <><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4 4"/></>,
     plus: <><path d="M12 5v14M5 12h14"/></>,
     eye: <><path d="M2.5 12s3.2-6 9.5-6 9.5 6 9.5 6-3.2 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
@@ -541,7 +548,7 @@ function App() {
         </div>
 
         <section className="table-card">
-          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="date-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select>{datePeriod !== 'all' && <input type="date" value={dateAnchor} onChange={(event) => setDateAnchor(event.target.value)} aria-label="Pilih tanggal acuan"/>}</div></div>
+          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="date-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select>{datePeriod !== 'all' && <DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/>}</div></div>
           <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}<th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{filtered.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
@@ -550,7 +557,7 @@ function App() {
               const isDownloadingPdf = downloadingPdf === pdfKey
               const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
               return <tr key={record.id}>
-                <td className="number-cell">{record.number}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>
+                <td className="number-cell">{record.number}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>
                 {page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
                 <td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
                 {page !== 'receipt' && <td><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
@@ -602,8 +609,8 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
       <div className="modal-body">
         <section className="form-section"><h3>Informasi dokumen</h3><div className="form-grid">
           <Field label={document.type === 'quotation' ? 'No. Quotation' : 'No. Invoice'}><input value={document.number} onChange={(event) => set('number', event.target.value)} /></Field>
-          <Field label="Tanggal" required><input required type="date" value={document.date} onChange={(event) => setDocument((state) => {
-            const nextDate = event.target.value
+          <Field label="Tanggal" required><DateInput required ariaLabel="Tanggal dokumen" value={document.date} onChange={(nextDateValue) => setDocument((state) => {
+            const nextDate = nextDateValue
             const nextDueDate = state.type === 'invoice' && (!state.dueDate || state.dueDate === addDaysToDate(state.date, 14))
               ? addDaysToDate(nextDate, 14)
               : state.dueDate
@@ -613,7 +620,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
             }
             return { ...state, date: nextDate, dueDate: nextDueDate }
           })} /></Field>
-          {document.type === 'invoice' && <Field label="Jatuh tempo"><input type="date" value={document.dueDate || ''} onChange={(event) => set('dueDate', event.target.value)} /></Field>}
+          {document.type === 'invoice' && <Field label="Jatuh tempo"><DateInput ariaLabel="Tanggal jatuh tempo" value={document.dueDate || ''} onChange={(value) => set('dueDate', value)} /></Field>}
           <Field label="Kepada"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
           <Field label="Perusahaan" required><input required value={document.companyName} onChange={(event) => set('companyName', event.target.value)} /></Field>
           <Field label="Telepon / Fax"><input value={document.phone} onChange={(event) => set('phone', event.target.value)} /></Field>
@@ -651,6 +658,13 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
   </div>
 }
 
+function DateInput({ value, onChange, required = false, ariaLabel }) {
+  return <span className="date-input-shell">
+    <span className={value ? 'date-input-value' : 'date-input-placeholder'}>{formatLongDate(value) || 'Pilih tanggal'}</span>
+    <Icon name="calendar"/>
+    <input className="date-input-native" type="date" value={value || ''} onChange={(event) => onChange(event.target.value)} required={required} aria-label={ariaLabel}/>
+  </span>
+}
 function Field({ label, required = false, className = '', children }) {
   return <label className={`field ${className}`}><span>{label}{required && <b> *</b>}</span>{children}</label>
 }
@@ -669,8 +683,8 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
       <div className="modal-body"><section className="form-section"><div className="form-grid">
         <Field label="Invoice" required className="full"><select required value={receipt.invoiceId} onChange={(event) => changeInvoice(event.target.value)}><option value="">Pilih invoice</option>{documents.filter((doc) => doc.type === 'invoice').map((doc) => <option key={doc.id} value={doc.id}>{doc.number} · {doc.companyName} · {money(Math.max(0, docTotal(doc) - receipts.filter((row) => row.invoiceId === doc.id && row.id !== receipt.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)))}</option>)}</select></Field>
         <Field label="Nomor kwitansi"><input value={receipt.number} onChange={(event) => setReceipt((state) => ({ ...state, number: event.target.value }))}/></Field>
-        <Field label="Tanggal pembayaran" required><input required type="date" value={receipt.date} onChange={(event) => setReceipt((state) => {
-          const nextDate = event.target.value
+        <Field label="Tanggal pembayaran" required><DateInput required ariaLabel="Tanggal pembayaran" value={receipt.date} onChange={(nextDateValue) => setReceipt((state) => {
+          const nextDate = nextDateValue
           if (state.autoNumber && (!state.number || state.number === state.autoNumber)) {
             const nextNumber = numberFor('receipt', nextDate, documents, receipts, baselines)
             return { ...state, date: nextDate, number: state.number ? nextNumber : '', autoNumber: nextNumber }
