@@ -51,11 +51,9 @@ button { cursor: pointer; }
 .search-box input { width: 100%; border: 0; outline: none; color: #28394f; background: transparent; font-size: 13px; }
 .search-box input::placeholder { color: #9aa5b3; }
 .status-filter { display: flex; align-items: center; gap: 8px; color: #52657f; font-size: 12px; font-weight: 600; }
-.status-filter select { min-height: 38px; min-width: 155px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #28394f; background: #fff; font: inherit; }
-.date-filter { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; color: #52657f; font-size: 12px; font-weight: 600; }
-.date-filter select, .date-filter input { min-height: 38px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #28394f; background: #fff; font: inherit; }
-.date-filter select { min-width: 140px; }
-.date-filter input { width: 150px; }
+.status-filter select, .period-filter select { min-height: 38px; min-width: 155px; padding: 0 10px; border: 1.5px solid #b8c5d6; border-radius: 7px; color: #28394f; background: #fff; font: inherit; }
+.period-filter, .date-filter { display: flex; align-items: center; gap: 8px; color: #52657f; font-size: 12px; font-weight: 600; }
+.date-filter { justify-content: flex-end; margin-left: auto; }
 .date-filter .date-input-shell { width: 170px; min-height: 38px; padding: 0 10px; }
 .date-input-shell { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 37px; padding: 8px 10px; border: 1px solid #dce2e9; border-radius: 6px; color: #2f4058; background: #fff; font-size: 12px; font-weight: 400; cursor: pointer; }
 .date-input-shell:focus-within { border-color: #6e96e4; box-shadow: 0 0 0 3px rgba(56,106,207,.09); }
@@ -166,10 +164,9 @@ tbody tr:last-child td { border-bottom: 0; }
   .page-heading .button { min-height: 36px; padding: 0 10px; font-size: 11px; }
   .page-heading .button .icon { display: none; }
   .table-toolbar { min-height: 54px; padding: 9px; }
-  .status-filter { width: 100%; justify-content: space-between; }
-  .status-filter select { flex: 1; min-width: 0; }
-  .date-filter { width: 100%; margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
-  .date-filter select { flex: 1 1 120px; }
+  .status-filter, .period-filter { width: 100%; justify-content: space-between; }
+  .status-filter select, .period-filter select { flex: 1; min-width: 0; }
+  .date-filter { width: 100%; margin-left: 0; justify-content: space-between; flex-wrap: wrap; }
   .date-filter .date-input-shell { flex: 1 1 140px; width: auto; }
   .search-box { height: 35px; }
   .record-count { font-size: 10px; white-space: nowrap; }
