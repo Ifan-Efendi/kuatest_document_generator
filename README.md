@@ -1,6 +1,6 @@
 # KUATEST MEGATAMA Document Generator
 
-A standalone document generator for quotations, invoices, and receipts. Data is saved locally in the browser.
+A document generator for quotations, invoices, and receipts using Supabase Auth and Postgres.
 
 ## Run locally
 
@@ -13,9 +13,19 @@ npm run dev
 
 Import this repository into Vercel and set **Root Directory** to `.`. Use `npm run build`; Vercel publishes `dist` and provides the PDF rendering function in `api/render-pdf.js`.
 
-## Local data
+## Supabase setup
 
-Documents and company identity are stored in this browser's IndexedDB. They are not shared across browsers or computers. Use **Cadangkan** to download a JSON backup and **Impor** to restore it.
+1. Create a Supabase project and run supabase/schema.sql in SQL Editor.
+2. Create a company row, then create two users under Authentication > Users. Public sign-up is disabled.
+3. Add one profiles row per Auth user with the same company_id; assign admin and director.
+4. Copy .env.example to .env.local, set the Supabase project URL and publishable key, and add both values to Vercel Environment Variables before redeploy. Do not expose a secret/service-role key in browser code.
+5. Export a JSON backup from the old local app. Sign into the new app as director and use Impor once to migrate old documents and company settings.
+
+RLS policies enforce company isolation. Admins can create and edit, but cannot delete. Directors can delete, import, manage company identity, and access the recap report.
+
+## Data
+
+Documents are stored in Supabase and shared across signed-in devices. Directors can download JSON backups.
 
 ## PDF output
 

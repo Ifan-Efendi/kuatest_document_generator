@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js'
 import chromium from '@sparticuz/chromium'
 import {
   maxPdfRequestBytes,
@@ -17,6 +18,15 @@ export default async function handler(request, response) {
     response.setHeader('Allow', 'POST')
     return response.status(405).json({ error: 'Method not allowed.' })
   }
+
+  const authorization = request.headers.authorization || ''
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : ''
+  const url = process.env.VITE_SUPABASE_URL
+  const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  if (!token || !url || !key) return response.status(401).json({ error: 'Sesi tidak valid. Silakan masuk kembali.' })
+  const client = createClient(url, key, { auth: { persistSession: false } })
+  const { data: authData, error: authError } = await client.auth.getUser(token)
+  if (authError || !authData.user) return response.status(401).json({ error: 'Sesi tidak valid. Silakan masuk kembali.' })
 
   const payload = typeof request.body === 'string' ? safeJson(request.body) : request.body
   if (!payload || Buffer.byteLength(JSON.stringify(payload)) > maxPdfRequestBytes) {

@@ -1,0 +1,26 @@
+-- Run in Supabase SQL Editor. Assign roles in profiles, never user metadata.
+create extension if not exists pgcrypto;
+create table public.companies(id uuid primary key default gen_random_uuid(),name text not null default 'KUATEST MEGATAMA');
+create table public.profiles(user_id uuid primary key references auth.users(id) on delete cascade,company_id uuid not null references public.companies(id),role text not null check(role in ('admin','director')),full_name text not null default '');
+create table public.documents(id uuid primary key,company_id uuid not null references public.companies(id) on delete cascade,document_type text not null check(document_type in ('quotation','invoice')),document_number text not null,payload jsonb not null,updated_by uuid references auth.users(id),unique(company_id,document_type,document_number));
+create table public.receipts(id uuid primary key,company_id uuid not null references public.companies(id) on delete cascade,document_number text not null,invoice_id uuid references public.documents(id) on delete restrict,payload jsonb not null,updated_by uuid references auth.users(id),unique(company_id,document_number));
+create table public.company_settings(company_id uuid primary key references public.companies(id) on delete cascade,payload jsonb not null default '{}',updated_by uuid references auth.users(id));
+create function public.my_company_id() returns uuid language sql stable security definer set search_path=public as $$ select company_id from public.profiles where user_id=auth.uid() $$;
+create function public.my_role() returns text language sql stable security definer set search_path=public as $$ select role from public.profiles where user_id=auth.uid() $$;
+alter table public.companies enable row level security; alter table public.profiles enable row level security; alter table public.documents enable row level security; alter table public.receipts enable row level security; alter table public.company_settings enable row level security;
+create policy company_read on public.companies for select to authenticated using(id=public.my_company_id());
+create policy profile_read on public.profiles for select to authenticated using(user_id=auth.uid());
+create policy docs_select on public.documents for select to authenticated using(company_id=public.my_company_id());
+create policy docs_insert on public.documents for insert to authenticated with check(company_id=public.my_company_id());
+create policy docs_update on public.documents for update to authenticated using(company_id=public.my_company_id()) with check(company_id=public.my_company_id());
+create policy docs_delete on public.documents for delete to authenticated using(company_id=public.my_company_id() and public.my_role()='director');
+create policy receipts_select on public.receipts for select to authenticated using(company_id=public.my_company_id());
+create policy receipts_insert on public.receipts for insert to authenticated with check(company_id=public.my_company_id());
+create policy receipts_update on public.receipts for update to authenticated using(company_id=public.my_company_id()) with check(company_id=public.my_company_id());
+create policy receipts_delete on public.receipts for delete to authenticated using(company_id=public.my_company_id() and public.my_role()='director');
+create policy settings_select on public.company_settings for select to authenticated using(company_id=public.my_company_id());
+create policy settings_insert on public.company_settings for insert to authenticated with check(company_id=public.my_company_id() and public.my_role()='director');
+create policy settings_update on public.company_settings for update to authenticated using(company_id=public.my_company_id() and public.my_role()='director') with check(company_id=public.my_company_id() and public.my_role()='director');
+grant select on public.companies,public.profiles to authenticated;
+grant select,insert,update,delete on public.documents,public.receipts to authenticated;
+grant select,insert,update on public.company_settings to authenticated;

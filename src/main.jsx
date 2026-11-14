@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { loadProfile, supabase, supabaseConfigured } from './supabase'
 import { createRoot } from 'react-dom/client'
 import {
   amountInWords,
@@ -16,6 +17,7 @@ import {
   saveDocument,
   saveReceipt,
   saveSettings,
+  setWorkspace,
 } from './storage'
 import './style.css'
 
@@ -162,7 +164,7 @@ function newReceipt(invoice, documents, receipts, baselines = {}) {
   const autoNumber = numberFor('receipt', date, documents, receipts, baselines)
   return {
     id: createId(), invoiceId: invoice?.id || '', number: autoNumber, autoNumber,
-    date, amount: '', receivedFrom: invoice?.companyName || '', description: invoice ? paymentPurpose(invoice) : '',
+    date, amount: '', sendStatus: 'Belum Dikirim', receivedFrom: invoice?.companyName || '', description: invoice ? paymentPurpose(invoice) : '',
     method: 'transfer', amountWords: '',
   }
 }
@@ -188,6 +190,10 @@ function Icon({ name }) {
 }
 
 function App() {
+  const [user, setUser] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [documents, setDocuments] = useState([])
   const [receipts, setReceipts] = useState([])
   const [company, setCompany] = useState(defaultCompany)
@@ -221,20 +227,40 @@ function App() {
       }
     })
     setCompany(mergedCompany)
-    if (JSON.stringify(mergedCompany) !== JSON.stringify({ ...defaultCompany, ...savedCompany, numberBaselines })) {
-      await saveSettings(mergedCompany)
-    }
+
   }
 
   useEffect(() => {
-    refresh().then(() => setReady(true)).catch((error) => {
-      setMessage(error.message || 'Penyimpanan lokal tidak dapat dibuka.')
-      setReady(true)
-    })
+    if (!supabaseConfigured) { setReady(true); return }
+    let active = true
+    const openSession = async (session) => {
+      if (!active) return
+      setUser(session?.user || null)
+      if (!session?.user) { setProfile(null); setWorkspace(null); setReady(true); return }
+      try {
+        const nextProfile = await loadProfile(session.user.id)
+        if (!active) return
+        setWorkspace(nextProfile); setProfile(nextProfile)
+        await refresh(); setReady(true)
+      } catch (error) { if (active) { setMessage(error.message); setReady(true) } }
+    }
+    supabase.auth.getSession().then(({ data }) => openSession(data.session))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { queueMicrotask(() => openSession(session)) })
+    return () => { active = false; listener.subscription.unsubscribe() }
   }, [])
+
+  const signIn = async (event) => {
+    event.preventDefault(); setMessage('')
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setMessage('Email atau kata sandi tidak sesuai.')
+  }
+  const signOut = async () => { await supabase.auth.signOut(); setReady(false); setPage('quotation') }
 
   const items = page === 'receipt' ? receipts : documents.filter((row) => row.type === page)
   const filtered = useMemo(() => items.filter((row) => `${row.number} ${row.companyName || row.receivedFrom || ''} ${row.status || ''}`.toLowerCase().includes(query.toLowerCase())), [items, query])
+
+  if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><h1>KUATEST MEGATAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
+  if (!user || !profile || !ready) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><h1>KUATEST MEGATAMA</h1><p>Masuk ke Document Generator</p><label className="field"><span>Email</span><input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><label className="field"><span>Kata sandi</span><input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary">Masuk</button>{message && <p role="alert">{message}</p>}</form></main>
 
   const startDocument = (type, quotation = null) => {
     try {
@@ -276,7 +302,7 @@ function App() {
     await saveDocument(form)
     await refresh()
     setModal(null)
-    setMessage(`${labels[form.type]} tersimpan di browser ini.`)
+    setMessage(`${labels[form.type]} tersimpan.`)
   }
 
   const saveReceiptForm = async (event) => {
@@ -305,7 +331,7 @@ function App() {
     await saveReceipt(saved)
     await refresh()
     setModal(null)
-    setMessage('Kwitansi tersimpan di browser ini.')
+    setMessage('Kwitansi tersimpan.')
   }
 
   const changeStatus = async (document, status) => {
@@ -433,7 +459,7 @@ function App() {
     await saveSettings(settingsForm)
     setCompany({ ...settingsForm })
     setModal(null)
-    setMessage('Identitas perusahaan tersimpan di browser ini.')
+    setMessage('Identitas perusahaan tersimpan.')
   }
 
   const backup = async () => {
@@ -460,24 +486,25 @@ function App() {
   }
 
   const documentType = page === 'receipt' ? 'receipt' : page
-  const title = labels[documentType]
+  const title = page === 'reports' ? 'Laporan Rekap' : labels[documentType]
 
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">K</div><div><strong>KUATEST MEGATAMA</strong><span>Document Generator</span></div></div>
-      {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery('') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
+      {['quotation', 'invoice', 'receipt', ...(profile.role === 'director' ? ['reports'] : [])].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery('') }}><Icon name={key}/><span>{key === 'reports' ? 'Laporan Rekap' : labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
 
     <main className="main-area">
       <header className="topbar"><div className="mobile-brand">KUATEST MEGATAMA</div><div className="topbar-right">
-        <label className="file-control"><Icon name="download"/><span>Impor</span><input type="file" accept="application/json,.json" onChange={restore}/></label>
-        <button className="button subtle" onClick={backup}><Icon name="download"/><span>Cadangkan</span></button>
-        <button type="button" className="avatar" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>
+        {profile.role === 'director' && <label className="file-control"><Icon name="download"/><span>Impor</span><input type="file" accept="application/json,.json" onChange={restore}/></label>}
+        {profile.role === 'director' && <button className="button subtle" onClick={backup}><Icon name="download"/><span>Cadangkan</span></button>}
+        {profile.role === 'director' && <button type="button" className="avatar" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}<span className="user-role">{profile.role === 'director' ? 'Direktur' : 'Admin'}</span><button className="button subtle" onClick={signOut}>Keluar</button>
       </div></header>
 
-      <section className="page-content">
+      <section className={`page-content${page === 'reports' ? ' is-report' : ''}`}>
         <div className="breadcrumbs">Dokumen <span>/</span> {title}</div>
+        {page === 'reports' && <ReportView documents={documents} receipts={receipts} company={company} />}
         <div className="page-heading"><div><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
           {page === 'receipt'
             ? <button className="button primary" onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
@@ -506,7 +533,7 @@ function App() {
                   <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
                   {page === 'quotation' && <button className="icon-button" title="Buat invoice dari penawaran" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>}
                   {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
-                  <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>
+                  {profile.role === 'director' && <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
                 </div></td>
               </tr>
             })}
@@ -514,16 +541,32 @@ function App() {
             </tbody></table></div>
         </section>
 
-        <div className="storage-banner"><strong>Catatan:</strong><span>Dokumen hanya tersimpan di browser/perangkat ini. Buat cadangan JSON secara berkala untuk mencegah kehilangan data.</span><button className="button primary backup-button" onClick={backup}>Buat cadangan</button></div>
+        <div className="storage-banner"><strong>Catatan:</strong><span>Data tersimpan aman di Supabase dan dapat diakses sesuai akun Anda.</span>{profile.role === 'director' && <button className="button primary backup-button" onClick={backup}>Buat cadangan</button>}</div>
       </section>
     </main>
 
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)}/>}
     {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm}/>}
-    {modal === 'settings' && <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/>}
+    {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah identitas perusahaan.</div>)}
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
 }
+
+function ReportView({ documents, receipts, company }) {
+  const quotations = documents.filter(row => row.type === 'quotation' && row.status !== 'Draft')
+  const invoices = documents.filter(row => row.type === 'invoice')
+  const paidFor = invoice => receipts.filter(row => row.invoiceId === invoice.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  const date = value => value ? new Intl.DateTimeFormat('id-ID', {dateStyle:'medium',timeZone:'UTC'}).format(new Date(`${value}T12:00:00Z`)) : '-'
+  const paymentState = invoice => { const paid = paidFor(invoice); const total = docTotal(invoice); return paid <= 0 ? 'Belum Dibayar' : paid >= total ? 'Lunas' : 'DP / Sebagian' }
+  return <><div className="report-toolbar"><div><h1>Laporan Rekap Dokumen</h1><p>Rekap penawaran, invoice, dan kwitansi</p></div><button className="button primary" onClick={() => window.print()}>Cetak / Simpan PDF</button></div>
+  <article className="report-sheet"><header className="report-letterhead">{company.logo && <img src={company.logo} />}<h2>{company.name}</h2><p>{company.description}</p><p>SK Menkumham {company.legal_number} | NIB: {company.business_number}</p><p>{company.phone} | {company.email} | {company.website}</p></header>
+    <ReportTable title="Rekap Penawaran" columns={['No. Quotation','Tanggal','Perusahaan','Nominal','Status']} rows={quotations.map(q => [q.number,date(q.date),q.companyName,money(docTotal(q)),q.status || 'Terkirim'])} />
+    <ReportTable title="Rekap Invoice" columns={['No. Invoice','Tanggal','Perusahaan','Total','Dibayar','Status Pembayaran']} rows={invoices.map(i => [i.number,date(i.date),i.companyName,money(docTotal(i)),money(paidFor(i)),paymentState(i)])} />
+    <ReportTable title="Rekap Kwitansi" columns={['No. Kwitansi','Tanggal','No. Invoice','Perusahaan','Nominal','Status Pengiriman']} rows={receipts.map(r => [r.number,date(r.date),r.invoiceNumber || '-',r.receivedFrom || r.companyName,money(r.amount),r.sendStatus || 'Belum Dikirim'])} />
+    <footer className="report-address">Office: {company.address}</footer>
+  </article></>
+}
+function ReportTable({title,columns,rows}) { return <section className="report-section"><h3>{title}</h3><table><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row,i)=><tr key={i}>{row.map((cell,j)=><td key={j}>{cell}</td>)}</tr>) : <tr><td colSpan={columns.length}>Tidak ada data untuk direkap.</td></tr>}</tbody></table></section> }
 
 function DocumentModal({ document, setDocument, onClose, onSave, company, documents, receipts, isExisting }) {
   const set = (key, value) => setDocument((state) => ({ ...state, [key]: value }))
@@ -620,6 +663,7 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
         <Field label="Telah terima dari"><input value={receipt.receivedFrom} onChange={(event) => setReceipt((state) => ({ ...state, receivedFrom: event.target.value }))}/></Field>
         <Field label="Jumlah pembayaran" required><AmountInput required value={receipt.amount} onValueChange={(value) => setReceipt((state) => ({ ...state, amount: value, amountWords: amountInWords(value) }))}/></Field>
         <Field label="Metode pembayaran"><select value={receipt.method} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option><option value="lainnya">Lainnya</option></select></Field>
+        <Field label="Status pengiriman kwitansi"><select value={receipt.sendStatus || 'Belum Dikirim'} onChange={e => setReceipt(v => ({...v,sendStatus:e.target.value}))}><option>Belum Dikirim</option><option>Terkirim</option></select></Field>
         <Field label="Untuk pembayaran" className="full"><input value={receipt.description} onChange={(event) => setReceipt((state) => ({ ...state, description: event.target.value }))}/></Field>
         <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
         <div className="full outstanding"><span>Sisa invoice</span><strong>{money(remaining)}</strong></div>
@@ -651,4 +695,3 @@ function SettingsModal({ settings, setSettings, onClose, onSave }) {
 }
 
 createRoot(document.getElementById('root')).render(<App />)
-
