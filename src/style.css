@@ -2595,3 +2595,12 @@ html .app-shell .sidebar .brand span {
     font-size: 13px !important;
   }
 }
+
+
+/* Match desktop search text weight with the adjacent status and date controls. */
+@media (min-width: 701px) {
+  .quotation-toolbar .search-box input,
+  .quotation-toolbar .search-box input::placeholder {
+    font-weight: 600;
+  }
+}
