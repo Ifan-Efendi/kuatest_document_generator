@@ -2575,20 +2575,6 @@ html .app-shell .sidebar .brand span {
 }
 
 
-/* Auto-dismiss app toasts and make the brand mark reload the current page. */
-.brand.logo-refresh,
-.topbar .mobile-brand {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.brand.logo-refresh { width: 100%; }
-.brand.logo-refresh:focus-visible,
-.topbar .mobile-brand:focus-visible { outline: 2px solid #ffcb19; outline-offset: 3px; }
-
-
 .auth-loading > p { display: flex; align-items: center; justify-content: center; gap: 9px; }
 .auth-loading > p .icon { width: 17px; height: 17px; animation: pdf-spinner .8s linear infinite; }
 

@@ -285,14 +285,6 @@ function App() {
     setCompany(mergedCompany)
   }
 
-  const refreshFromLogo = async () => {
-    try {
-      await refresh()
-    } catch (error) {
-      setMessage(error.message || 'Data gagal diperbarui. Coba lagi.')
-    }
-  }
-
   useEffect(() => {
     if (!supabaseConfigured) { setReady(true); return }
     let active = true
@@ -673,13 +665,13 @@ function App() {
 
   return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
     <aside className="sidebar">
-      <button type="button" className="brand logo-refresh" onClick={refreshFromLogo} aria-label="Perbarui data"><img src={company.logo || '/assets/company-logo.png'} alt=""/><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></button>
+      <div className="brand"><img src={company.logo || '/assets/company-logo.png'} alt=""/><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></div>
       {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all'); setDatePeriod('all'); setDateAnchor(today()); setAppliedFilters({ query: '', status: 'all', period: 'all', date: today() }); setCurrentPage(1) }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><button type="button" className="topbar-menu" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={sidebarCollapsed ? "m9 5 7 7-7 7" : "m15 5-7 7 7 7"}/></svg></button><button type="button" className="mobile-brand" onClick={refreshFromLogo} aria-label="Perbarui data"><img src={company.logo || '/assets/company-logo.png'} alt=""/><span>KUATEST<br/>MEGA TAMA</span></button><nav className="topbar-nav" aria-label="Navigasi utama">{['quotation', 'invoice', 'receipt'].map((key) => <button type="button" key={key} className={`top-nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all'); setDatePeriod('all'); setDateAnchor(today()); setAppliedFilters({ query: '', status: 'all', period: 'all', date: today() }); setCurrentPage(1) }}>{labels[key]}</button>)}</nav><div className="topbar-right">
+      <header className="topbar"><button type="button" className="topbar-menu" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={sidebarCollapsed ? "m9 5 7 7-7 7" : "m15 5-7 7 7 7"}/></svg></button><div className="mobile-brand"><img src={company.logo || '/assets/company-logo.png'} alt=""/><span>KUATEST<br/>MEGA TAMA</span></div><nav className="topbar-nav" aria-label="Navigasi utama">{['quotation', 'invoice', 'receipt'].map((key) => <button type="button" key={key} className={`top-nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all'); setDatePeriod('all'); setDateAnchor(today()); setAppliedFilters({ query: '', status: 'all', period: 'all', date: today() }); setCurrentPage(1) }}>{labels[key]}</button>)}</nav><div className="topbar-right">
         {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Detail perusahaan" aria-label="Detail perusahaan"><Icon name="settings"/></button>}
         <div className="account-menu" ref={userMenuRef}>
           <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><span className="account-avatar"><Icon name="user"/></span><span className="account-name">{profile.role === 'director' ? 'Direktur' : 'Admin'}</span><svg className="account-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></button>
