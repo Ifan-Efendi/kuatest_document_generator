@@ -26,3 +26,26 @@ grant select,insert,update,delete on public.documents,public.receipts to authent
 grant select,insert,update on public.company_settings to authenticated;
 grant execute on function public.my_company_id() to authenticated;
 grant execute on function public.my_role() to authenticated;
+
+-- Enable Realtime updates for document lists in connected clients.
+do $$
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    raise exception 'Supabase Realtime publication does not exist';
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'documents'
+  ) then
+    execute 'alter publication supabase_realtime add table public.documents';
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'receipts'
+  ) then
+    execute 'alter publication supabase_realtime add table public.receipts';
+  end if;
+end
+$$;

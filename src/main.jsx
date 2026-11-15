@@ -157,6 +157,9 @@ function AmountInput({ value, onValueChange, ...props }) {
     }} />
 }
 
+const invoiceStatuses = ['Draft', 'Belum Lunas', 'DP 50%', 'Lunas']
+const invoiceStatusValue = (status) => invoiceStatuses.includes(status) ? status : 'Belum Lunas'
+
 const docTotal = (document) => {
   const subtotal = (document.items || []).reduce((sum, item) => sum + Number(item.total ?? Number(item.quantity || 0) * Number(item.price || 0)), 0)
   const adjusted = Math.max(0, subtotal + Number(document.shippingFee || 0) - Number(document.discount || 0))
@@ -228,6 +231,9 @@ function App() {
   const [datePeriod, setDatePeriod] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateAnchor, setDateAnchor] = useState(today)
+  const [appliedFilters, setAppliedFilters] = useState({ query: '', status: 'all', period: 'all', date: today() })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [modal, setModal] = useState(null)
   const [docForm, setDocForm] = useState(null)
   const [receiptForm, setReceiptForm] = useState(null)
@@ -239,6 +245,7 @@ function App() {
   const [pendingPreview, setPendingPreview] = useState(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef(null)
+  const tableDragRef = useRef(null)
 
   const refresh = async (canPersistTagline = false) => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
@@ -287,6 +294,49 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const companyId = profile?.company_id
+    if (!supabaseConfigured || !user?.id || !ready || !companyId) return
+
+    let active = true
+    const applyChange = (setRows, change) => {
+      if (change.eventType === 'DELETE') {
+        const deletedId = change.old?.id
+        if (deletedId) setRows(rows => rows.filter(row => row.id !== deletedId))
+        return
+      }
+
+      const record = change.new?.payload
+      if (!record?.id) return
+      setRows(rows => {
+        const exists = rows.some(row => row.id === record.id)
+        const next = exists
+          ? rows.map(row => row.id === record.id ? record : row)
+          : [...rows, record]
+        return next.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      })
+    }
+
+    const channel = supabase
+      .channel(`company-documents-${companyId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'documents', filter: `company_id=eq.${companyId}`,
+      }, change => { if (active) applyChange(setDocuments, change) })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'receipts', filter: `company_id=eq.${companyId}`,
+      }, change => { if (active) applyChange(setReceipts, change) })
+      .subscribe((status, error) => {
+        if (active && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+          console.error('Supabase Realtime gagal tersambung.', error)
+        }
+      })
+
+    return () => {
+      active = false
+      void supabase.removeChannel(channel)
+    }
+  }, [profile?.company_id, ready, user?.id])
+
+  useEffect(() => {
     const closeOutside = (event) => {
       if (!userMenuRef.current?.contains(event.target)) setUserMenuOpen(false)
     }
@@ -312,17 +362,48 @@ function App() {
   const statusOptions = page === 'quotation'
     ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak']
     : page === 'invoice'
-      ? ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']
-      : ['Belum Dikirim', 'Terkirim']
-  const filtered = useMemo(() => items.filter((row) => {
-    const searchable = (row.number + ' ' + (row.companyName || row.receivedFrom || '') + ' ' + (row.status || '')).toLowerCase()
-    const rowStatus = page === 'receipt' ? row.sendStatus || 'Belum Dikirim' : row.status || 'Draft'
-    const matchesStatus = statusFilter === 'all' || rowStatus === statusFilter
-    return searchable.includes(query.toLowerCase()) && matchesDatePeriod(row.date, datePeriod, dateAnchor) && matchesStatus
-  }), [items, query, datePeriod, dateAnchor, statusFilter, page])
+      ? invoiceStatuses
+      : ['Draft', 'Belum Dikirim', 'Terkirim']
+  const filtered = useMemo(() => {
+    const filters = appliedFilters
+    return items.filter((row) => {
+      const searchable = (row.number + ' ' + (row.companyName || row.receivedFrom || '') + ' ' + (row.status || '')).toLowerCase()
+      const rowStatus = page === 'receipt' ? row.sendStatus || 'Belum Dikirim' : page === 'invoice' ? invoiceStatusValue(row.status) : row.status || 'Draft'
+      const matchesStatus = filters.status === 'all' || rowStatus === filters.status
+      return searchable.includes(filters.query.toLowerCase()) && matchesDatePeriod(row.date, filters.period, filters.date) && matchesStatus
+    })
+  }, [items, query, datePeriod, dateAnchor, statusFilter, appliedFilters, page])
+  const quotationStats = useMemo(() => {
+    const quotations = documents.filter((row) => row.type === 'quotation')
+    return {
+      total: quotations.length,
+      sent: quotations.filter((row) => row.status === 'Terkirim').length,
+      approved: quotations.filter((row) => ['Sudah Disetujui', 'Disetujui', 'Acc'].includes(row.status)).length,
+      rejected: quotations.filter((row) => row.status === 'Ditolak').length,
+    }
+  }, [documents])
+  const invoiceStats = useMemo(() => {
+    const invoices = documents.filter((row) => row.type === 'invoice')
+    return {
+      total: invoices.length,
+      unpaid: invoices.filter((row) => invoiceStatusValue(row.status) === 'Belum Lunas').length,
+      dp: invoices.filter((row) => invoiceStatusValue(row.status) === 'DP 50%').length,
+      paid: invoices.filter((row) => invoiceStatusValue(row.status) === 'Lunas').length,
+    }
+  }, [documents])
+  const receiptStats = useMemo(() => ({
+    total: receipts.length,
+    draft: receipts.filter((row) => row.sendStatus === 'Draft').length,
+    unsent: receipts.filter((row) => (row.sendStatus || 'Belum Dikirim') === 'Belum Dikirim').length,
+    sent: receipts.filter((row) => row.sendStatus === 'Terkirim').length,
+  }), [receipts])
+  const pageSize = 5
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safeCurrentPage = Math.min(currentPage, pageCount)
+  const visibleRecords = filtered.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
 
-  if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
-  if (!user || !profile || !ready) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><h1>PT. KUATEST MEGA TAMA</h1><p className="auth-subtitle">Masuk ke Document Generator</p><label className="field"><span>Email</span><input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><label className="field"><span>Kata sandi</span><input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary">Masuk</button>{message && <p role="alert">{message}</p>}</form></main>
+  if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
+  if (!user || !profile || !ready) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p className="auth-subtitle">Masuk ke Document Generator</p><label className="field"><span>Email</span><input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><label className="field"><span>Kata sandi</span><input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary">Masuk</button>{message && <p role="alert">{message}</p>}</form></main>
 
   const startDocument = (type, quotation = null) => {
     try {
@@ -340,17 +421,18 @@ function App() {
     setModal('receipt')
   }
 
-  const saveDoc = async (event) => {
-    event.preventDefault()
+  const saveDoc = async (event, asDraft = false) => {
+    event?.preventDefault?.()
     const form = {
       ...docForm,
+      status: asDraft ? 'Draft' : docForm.status,
       number: docForm.number.trim() || docForm.autoNumber || numberFor(docForm.type, docForm.date, documents, receipts, company.numberBaselines),
       items: docForm.items.filter((item) => item.name.trim()).map((item) => ({
         ...item,
         total: Math.round((Number(item.quantity || 0) * Number(item.price || 0) + Number.EPSILON) * 100) / 100,
       })),
     }
-    if (!form.number || !form.companyName.trim() || form.items.length === 0) {
+    if (!asDraft && (!form.number || !form.companyName.trim() || form.items.length === 0)) {
       setMessage('Isi nomor, nama perusahaan, dan minimal satu barang.')
       return
     }
@@ -364,41 +446,54 @@ function App() {
     await saveDocument(form)
     await refresh()
     setModal(null)
-    setMessage(`${labels[form.type]} tersimpan.`)
+    setMessage(asDraft ? `${labels[form.type]} disimpan sebagai draft.` : `${labels[form.type]} tersimpan.`)
   }
 
-  const saveReceiptForm = async (event) => {
-    event.preventDefault()
+  const saveReceiptForm = async (event, asDraft = false) => {
+    event?.preventDefault?.()
     const invoice = documents.find((row) => row.id === receiptForm.invoiceId)
     const number = receiptForm.number.trim() || receiptForm.autoNumber || numberFor('receipt', receiptForm.date, documents, receipts, company.numberBaselines)
-    if (!invoice || Number(receiptForm.amount) <= 0 || !number) {
+    if (!asDraft && (!invoice || Number(receiptForm.amount) <= 0 || !number)) {
       setMessage('Pilih invoice dan isi nomor serta jumlah pembayaran.')
       return
     }
-    const otherPaid = receipts.filter((row) => row.invoiceId === invoice.id && row.id !== receiptForm.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
-    const remaining = Math.max(0, docTotal(invoice) - otherPaid)
-    if (Number(receiptForm.amount) > remaining) {
+    const otherPaid = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receiptForm.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPaid) : 0
+    if (!asDraft && Number(receiptForm.amount) > remaining) {
       setMessage(`Jumlah pembayaran melebihi sisa invoice ${money(remaining)}.`)
       return
     }
     const saved = {
       ...receiptForm,
       number,
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.number,
-      companyName: invoice.companyName,
-      amount: Number(receiptForm.amount),
-      amountWords: receiptForm.amountWords.trim() || amountInWords(receiptForm.amount),
+      invoiceId: invoice?.id || receiptForm.invoiceId || '',
+      invoiceNumber: invoice?.number || receiptForm.invoiceNumber || '',
+      companyName: invoice?.companyName || receiptForm.companyName || receiptForm.receivedFrom || '',
+      amount: asDraft ? receiptForm.amount : Number(receiptForm.amount),
+      amountWords: asDraft ? receiptForm.amountWords : receiptForm.amountWords.trim() || amountInWords(receiptForm.amount),
+      sendStatus: asDraft ? 'Draft' : receiptForm.sendStatus === 'Draft' ? 'Belum Dikirim' : receiptForm.sendStatus || 'Belum Dikirim',
     }
     await saveReceipt(saved)
     await refresh()
     setModal(null)
-    setMessage('Kwitansi tersimpan.')
+    setMessage(asDraft ? 'Kwitansi disimpan sebagai draft.' : 'Kwitansi tersimpan.')
   }
 
   const changeStatus = async (document, status) => {
-    await saveDocument({ ...document, status })
-    await refresh()
+    const currentDocument = documents.find(row => row.id === document.id) || document
+    if (currentDocument.status === status) return
+
+    const previousStatus = currentDocument.status
+    setDocuments(rows => rows.map(row => row.id === document.id ? { ...row, status } : row))
+    setMessage('')
+    try {
+      await saveDocument({ ...currentDocument, status })
+      setMessage('Status berhasil diperbarui.')
+    } catch (error) {
+      setDocuments(rows => rows.map(row => row.id === document.id ? { ...row, status: previousStatus } : row))
+      try { await refresh() } catch { /* keep the optimistic rollback when refresh also fails */ }
+      setMessage(`Status gagal disimpan: ${error.message}`)
+    }
   }
 
   const editDocument = (document) => {
@@ -522,25 +617,78 @@ function App() {
     await saveSettings(settingsForm)
     setCompany({ ...settingsForm })
     setModal(null)
-    setMessage('Identitas perusahaan tersimpan.')
+    setMessage('Detail perusahaan tersimpan.')
   }
 
 
   const documentType = page === 'receipt' ? 'receipt' : page
   const title = labels[documentType]
+  const updateFilter = (field, value) => {
+    const setters = { query: setQuery, status: setStatusFilter, period: setDatePeriod, date: setDateAnchor }
+    setters[field](value)
+    if (window.matchMedia('(max-width: 700px)').matches) {
+      setAppliedFilters((current) => ({ ...current, [field]: value }))
+      setCurrentPage(1)
+    }
+  }
 
-  return <div className="app-shell">
+  const handleTablePointerDown = (event) => {
+    if (!window.matchMedia('(max-width: 700px)').matches) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    if (event.target.closest('button, a, input, select, textarea')) return
+    tableDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      dragging: false,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const handleTablePointerMove = (event) => {
+    const drag = tableDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId || drag.cancelled) return
+    const deltaX = event.clientX - drag.startX
+    const deltaY = event.clientY - drag.startY
+    if (!drag.dragging && Math.max(Math.abs(deltaX), Math.abs(deltaY)) > 6) {
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        drag.cancelled = true
+        return
+      }
+      drag.dragging = true
+      event.currentTarget.classList.add('is-pointer-dragging')
+    }
+    if (drag.dragging) {
+      event.preventDefault()
+      event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
+    }
+  }
+  const handleTablePointerEnd = (event) => {
+    const drag = tableDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    event.currentTarget.classList.remove('is-pointer-dragging')
+    if (!drag.dragging) tableDragRef.current = null
+  }
+  const suppressTableClickAfterDrag = (event) => {
+    if (!tableDragRef.current?.dragging) return
+    event.preventDefault()
+    event.stopPropagation()
+    tableDragRef.current = null
+  }
+
+  return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
     <aside className="sidebar">
-      <div className="brand"><div><strong>KUATEST MEGA TAMA</strong><span>Document Generator</span></div></div>
-      {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all') }}><Icon name={key}/><span>{labels[key]}</span></button>)}
+      <div className="brand"><img src={company.logo || '/assets/company-logo.png'} alt=""/><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></div>
+      {['quotation', 'invoice', 'receipt'].map((key) => <button key={key} className={`nav-item ${page === key ? 'active' : ''}`} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all'); setDatePeriod('all'); setDateAnchor(today()); setAppliedFilters({ query: '', status: 'all', period: 'all', date: today() }); setCurrentPage(1) }}><Icon name={key}/><span>{labels[key]}</span></button>)}
       <div className="sidebar-spacer" />
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="mobile-brand">KUATEST MEGA TAMA</div><div className="topbar-right">
-        {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Identitas perusahaan" aria-label="Identitas perusahaan"><Icon name="settings"/></button>}
+      <header className="topbar"><button type="button" className="topbar-menu" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={sidebarCollapsed ? "m9 5 7 7-7 7" : "m15 5-7 7 7 7"}/></svg></button><div className="mobile-brand"><img src={company.logo || '/assets/company-logo.png'} alt=""/><span>KUATEST<br/>MEGA TAMA</span></div><nav className="topbar-nav" aria-label="Navigasi utama">{['quotation', 'invoice', 'receipt'].map((key) => <button type="button" key={key} className={`top-nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all'); setDatePeriod('all'); setDateAnchor(today()); setAppliedFilters({ query: '', status: 'all', period: 'all', date: today() }); setCurrentPage(1) }}>{labels[key]}</button>)}</nav><div className="topbar-right">
+        {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Detail perusahaan" aria-label="Detail perusahaan"><Icon name="settings"/></button>}
         <div className="account-menu" ref={userMenuRef}>
-          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><Icon name="user"/></button>
+          <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><span className="account-avatar"><Icon name="user"/></span><span className="account-name">{profile.role === 'director' ? 'Direktur' : 'Admin'}</span><svg className="account-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></button>
           {userMenuOpen && <div className="account-popover" role="menu">
             <div className="account-details"><strong>{profile.full_name || (profile.role === 'director' ? 'Direktur' : 'Administrator')}</strong><span>{user?.email || ''}</span><small>{profile.role === 'director' ? 'Direktur' : 'Administrator'}</small></div>
             <button type="button" className="account-logout" role="menuitem" onClick={signOut}><Icon name="logout"/>Keluar</button>
@@ -548,54 +696,94 @@ function App() {
         </div>
       </div></header>
 
-      <section className="page-content">
-        <div className="page-heading"><div><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
+      <section className={`page-content page-content-${page}`}>
+        <div className={`page-heading${page === 'quotation' ? ' quotation-heading' : ' document-heading'}`}><div className="heading-copy"><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
           {page === 'receipt'
             ? <button className="button primary" onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
             : <button type="button" className="button primary" onClick={() => startDocument(page)}><Icon name="plus"/>Buat {title}</button>}
+          {['quotation', 'invoice', 'receipt'].includes(page) && <div className="hero-illustration" aria-hidden="true"><svg viewBox="0 0 270 250" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><filter id="clipboard-shadow" x="22" y="16" width="238" height="235" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="9"/></filter><linearGradient id="clipboard-frame" x1="54" y1="44" x2="204" y2="216" gradientUnits="userSpaceOnUse"><stop stopColor="#67B8FF"/><stop offset="1" stopColor="#0872DF"/></linearGradient></defs><ellipse cx="136" cy="218" rx="92" ry="17" fill="#062E68" fillOpacity=".45" filter="url(#clipboard-shadow)"/><g transform="rotate(10 135 127)"><rect x="51" y="38" width="158" height="184" rx="22" fill="url(#clipboard-frame)"/><rect x="65" y="52" width="130" height="154" rx="13" fill="#F8FBFF"/><rect x="111" y="34" width="55" height="26" rx="8" fill="#F8B900"/><rect x="119" y="29" width="39" height="10" rx="5" fill="#FFD64A"/><rect x="82" y="79" width="20" height="20" rx="4" fill="#E9F4FF" stroke="#1473D1" strokeWidth="3"/><path d="m87 88 4 4 7-9" stroke="#1473D1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/><path d="M116 85h54M116 94h40" stroke="#8FA8C8" strokeWidth="5" strokeLinecap="round"/><rect x="82" y="116" width="20" height="20" rx="4" fill="#E9F4FF" stroke="#1473D1" strokeWidth="3"/><path d="m87 125 4 4 7-9" stroke="#1473D1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/><path d="M116 122h54M116 131h34" stroke="#8FA8C8" strokeWidth="5" strokeLinecap="round"/><rect x="82" y="153" width="20" height="20" rx="4" fill="#E9F4FF" stroke="#A7BAD3" strokeWidth="3"/><path d="M116 159h49M116 168h31" stroke="#A7BAD3" strokeWidth="5" strokeLinecap="round"/></g><g transform="rotate(28 203 158)"><path d="M204 82 216 90 163 187 151 179 204 82Z" fill="#0B75D1"/><path d="m151 179 12 8-17 19 5-27Z" fill="#F6C04A"/><path d="m147 194-1 12 8-9" fill="#143965"/><path d="m204 82 6-11a7 7 0 0 1 12 7l-6 12-12-8Z" fill="#F5B825"/><path d="m202 86 12 8" stroke="#DCEEFF" strokeWidth="4"/></g></svg></div>}
         </div>
 
+
+
+        {page === 'quotation' && <section className="quotation-stats" aria-label="Ringkasan penawaran">
+          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="quotation"/></span><div><span>Total Penawaran</span><strong>{quotationStats.total}</strong></div><span className="stat-watermark"><Icon name="quotation"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Dikirim</span><strong>{quotationStats.sent}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
+          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Disetujui</span><strong>{quotationStats.approved}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
+          <article className="quotation-stat stat-rejected"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></span><div><span>Ditolak</span><strong>{quotationStats.rejected}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></svg></article>
+        </section>}
+        {page === 'invoice' && <section className="quotation-stats" aria-label="Ringkasan invoice">
+          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="invoice"/></span><div><span>Total Invoice</span><strong>{invoiceStats.total}</strong></div><span className="stat-watermark"><Icon name="invoice"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Belum Lunas</span><strong>{invoiceStats.unpaid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
+          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><Icon name="receipt"/></span><div><span>DP 50%</span><strong>{invoiceStats.dp}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
+          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Lunas</span><strong>{invoiceStats.paid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
+        </section>}
+        {page === 'receipt' && <section className="quotation-stats" aria-label="Ringkasan kwitansi">
+          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="receipt"/></span><div><span>Total Kwitansi</span><strong>{receiptStats.total}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></svg></span><div><span>Draft</span><strong>{receiptStats.draft}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25"/></svg></article>
+          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg></span><div><span>Belum Dikirim</span><strong>{receiptStats.unsent}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg></article>
+          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Terkirim</span><strong>{receiptStats.sent}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
+        </section>}
         <section className="table-card">
-          <div className="table-toolbar"><div className="search-box"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nomor atau perusahaan" aria-label="Cari dokumen"/></div><div className="status-filter"><label htmlFor="status-filter">Status</label><select id="status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period">Periode</label><select id="date-period" value={datePeriod} onChange={(event) => setDatePeriod(event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label>Tanggal</label><DateInput value={dateAnchor} onChange={setDateAnchor} ariaLabel="Pilih tanggal acuan"/></div></div>
-          <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}<th className="actions-heading">Aksi</th></tr></thead>
-            <tbody>{filtered.map((record) => {
+          <div className="table-toolbar quotation-toolbar"><div className="search-filter"><label htmlFor="document-search">Cari Dokumen</label><div className="search-box"><Icon name="search"/><input id="document-search" value={query} onChange={(event) => updateFilter('query', event.target.value)} placeholder="Cari nomor atau perusahaan..." aria-label="Cari dokumen"/></div></div><div className="status-filter"><label htmlFor="status-filter"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 8.5"/></svg><span>Status</span></label><select id="status-filter" value={statusFilter} onChange={(event) => updateFilter('status', event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Periode</span></label><select id="date-period" value={datePeriod} onChange={(event) => updateFilter('period', event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Tanggal</span></label><DateInput value={dateAnchor} onChange={(value) => updateFilter('date', value)} ariaLabel="Pilih tanggal acuan"/></div><button type="button" className="button apply-filter" onClick={() => { setAppliedFilters({ query, status: statusFilter, period: datePeriod, date: dateAnchor }); setCurrentPage(1) }}><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg>Terapkan</button></div>
+          <div className="table-scroll" onPointerDown={handleTablePointerDown} onPointerMove={handleTablePointerMove} onPointerUp={handleTablePointerEnd} onPointerCancel={handleTablePointerEnd} onClickCapture={suppressTableClickAfterDrag}><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
+            <tbody>{visibleRecords.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
               const pdfKey = `${page}:${record.id}`
               const isViewingPdf = viewingPdf === pdfKey
               const isDownloadingPdf = downloadingPdf === pdfKey
               const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
-              return <tr key={record.id}>
-                <td className="number-cell">{record.number}</td><td>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))}</td>
-                {page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
-                <td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
-                {page !== 'receipt' && <td><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
-                  {(page === 'quotation' ? ['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'] : ['Draft', 'Terkirim', 'Belum Lunas', 'Lunas']).map((status) => <option key={status}>{status}</option>)}
-                </select></td>}
-                <td><div className="row-actions">
-                  <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF…' : 'View PDF'} aria-label={isViewingPdf ? 'Menyiapkan PDF untuk ditampilkan' : 'View PDF'} disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
-                  <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF…' : 'Unduh PDF'} aria-label={isDownloadingPdf ? 'Mengunduh PDF' : 'Unduh PDF'} disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
-                  <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
-                  {page === 'quotation' && <button className="icon-button" title="Buat invoice dari penawaran" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>}
-                  {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
-                  {profile.role === 'director' && <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
+              const rowDate = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))
+              return <tr key={record.id} className="document-row" onClick={(event) => {
+                if (event.target.closest('.status-cell, td:last-child, button, select, a, input, textarea')) return
+                if (page === 'receipt') editReceipt(record)
+                else editDocument(record)
+              }}>
+                <td className={'number-cell number-cell-' + page}><span className="row-document-icon"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></td>
+                {page === 'quotation' ? <><td className="company-cell">{record.companyName || '-'}</td><td>{rowDate}</td><td className="status-cell"><select className={`status-select ${/disetujui|acc/i.test(record.status || '') ? 'status-approved' : record.status === 'Ditolak' ? 'status-rejected' : 'status-progress'}`} value={page === 'invoice' ? invoiceStatusValue(record.status) : record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                  {['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}
+                </select></td><td className="amount-cell">{money(docTotal(record))}</td></> : <>
+                  <td>{rowDate}</td>{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
+                  <td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
+                  {page !== 'receipt' && <td className="status-cell"><select className="status-select" value={page === 'invoice' ? invoiceStatusValue(record.status) : record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                    {statusOptions.map((status) => <option key={status}>{status}</option>)}
+                  </select></td>}
+                </>}
+                <td><div className={`row-actions${page === 'quotation' ? ' quotation-actions' : ''}`}>
+                  {page === 'quotation' ? <>
+                    <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title="Lihat PDF" aria-label="Lihat PDF" disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
+                    <button type="button" className={isDownloadingPdf ? "icon-button is-loading" : "icon-button"} title={isDownloadingPdf ? "Mengunduh PDF..." : "Unduh PDF"} aria-label="Unduh PDF" disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
+                    <button type="button" className="icon-button" title="Buat invoice" aria-label="Buat invoice" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>
+                    <button type="button" className="icon-button" title="Ubah" aria-label="Ubah penawaran" onClick={() => editDocument(record)}><Icon name="edit"/></button>
+                    {profile.role === 'director' && <button type="button" className="icon-button danger" title="Hapus penawaran" aria-label="Hapus penawaran" onClick={() => remove(record, 'documents')}><Icon name="trash"/></button>}
+                    </> : <>
+                    <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF...' : 'Lihat PDF'} aria-label="Lihat PDF" disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
+                    <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF...' : 'Unduh PDF'} aria-label="Unduh PDF" disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
+                    <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
+                    {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
+                    {profile.role === 'director' && <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
+                  </>}
                 </div></td>
               </tr>
             })}
             {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{!ready ? 'Memuat data...' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
+          <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data</span><div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
         </section>
 
       </section>
     </main>
 
-    {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)}/>}
-    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm}/>}
-    {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah identitas perusahaan.</div>)}
+    {!modal && <button type="button" className="floating-create-button" aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
+
+    {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)}/>}
+    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)}/>}
+    {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah detail perusahaan.</div>)}
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
 }
 
-function DocumentModal({ document, setDocument, onClose, onSave, company, documents, receipts, isExisting }) {
+function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, company, documents, receipts, isExisting }) {
   const set = (key, value) => setDocument((state) => ({ ...state, [key]: value }))
   const updateItem = (id, key, value) => setDocument((state) => ({ ...state, items: state.items.map((item) => item.id === id ? { ...item, [key]: value } : item) }))
   const addItem = () => setDocument((state) => ({ ...state, items: [...state.items, { id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }] }))
@@ -613,7 +801,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
 
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <form className="modal document-modal" onSubmit={onSave}>
-      <div className="modal-head"><div><span className="eyebrow">DOKUMEN</span><h2>{isExisting ? 'Ubah' : 'Buat'} {labels[document.type]}</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="modal-head"><div><h2>{isExisting ? 'Ubah' : 'Buat'} {labels[document.type]}</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
       <div className="modal-body">
         <section className="form-section"><h3>Informasi dokumen</h3><div className="form-grid">
           <Field label={document.type === 'quotation' ? 'No. Quotation' : 'No. Invoice'}><input value={document.number} onChange={(event) => set('number', event.target.value)} /></Field>
@@ -640,10 +828,10 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
 
         <section className="form-section"><div className="section-head"><div><h3>Barang / jasa</h3><p>Masukkan nama alat.</p></div></div>
           <div className="line-items">{document.items.map((item, index) => <div className="line-item" key={item.id}>
-            <div className="line-index">{String(index + 1).padStart(2, '0')}</div>
+            <div className="line-item-heading"><span className="line-index">{String(index + 1).padStart(2, '0')}</span><button className="icon-button danger remove-line" type="button" title="Hapus baris" disabled={document.items.length === 1} onClick={() => removeItem(item.id)}><Icon name="trash"/></button></div>
             <div className="line-fields"><Field label="Nama alat"><input value={item.name} onChange={(event) => updateItem(item.id, 'name', event.target.value)} /></Field><Field label="Spesifikasi"><textarea rows="1" value={item.specification} onChange={(event) => updateItem(item.id, 'specification', event.target.value)} /></Field><Field label="Jumlah"><input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} /></Field><Field label="Satuan"><input value={item.unit} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} /></Field><Field label="Harga"><AmountInput value={item.price} onValueChange={(value) => updateItem(item.id, 'price', value)} /></Field>
               <Field label="Upload foto produk" className="full"><div className="upload-row"><input type="file" accept="image/*" onChange={(event) => readImage(event.target.files[0], (image) => updateItem(item.id, 'image', image))}/>{item.image && <button type="button" className="text-button danger-text" onClick={() => updateItem(item.id, 'image', '')}>Hapus gambar</button>}</div></Field>
-            </div><button className="icon-button danger remove-line" type="button" title="Hapus baris" disabled={document.items.length === 1} onClick={() => removeItem(item.id)}><Icon name="trash"/></button>
+            </div>
           </div>)}</div>
           <div className="line-items-footer"><button className="button small subtle" type="button" onClick={addItem}><Icon name="plus"/>Tambah baris</button></div>
         </section>
@@ -652,16 +840,15 @@ function DocumentModal({ document, setDocument, onClose, onSave, company, docume
           <Field label="Subtotal barang"><output className="field-output">{money(document.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0))}</output></Field>
           <Field label="Ongkir"><AmountInput value={document.shippingFee || 0} onValueChange={(value) => set('shippingFee', value)} /></Field>
           <Field label="Diskon"><AmountInput value={document.discount || 0} onValueChange={(value) => set('discount', value)} /></Field>
-          {document.type === 'quotation' && <><Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field><Field label="PPN nominal (jika tanpa tarif)"><AmountInput value={document.vatAmount || 0} onValueChange={(value) => set('vatAmount', value)} /></Field></>}
+          {document.type === 'quotation' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
           {document.type === 'invoice' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
-          <Field label="Grand Total"><output className="total-output">{money(total)}</output></Field>
           {document.type === 'invoice' && document.billingStage === 'dp' && <><Field label="Nominal DP"><AmountInput value={document.downPaymentAmount || ''} onValueChange={(value) => set('downPaymentAmount', value)} /></Field><Field label="Sisa Tagihan"><output className="field-output total-output">{money(remainingAfterDownPayment)}</output></Field></>}
-        </div></section>
+        </div><div className="grand-total-panel"><span>Grand Total</span><strong>{money(total)}</strong></div></section>
 
         {document.type === 'quotation' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Kondisi perjanjian kerja" className="full"><textarea rows="5" value={document.workConditions || ''} onChange={(event) => set('workConditions', event.target.value)} /></Field><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
         {document.type === 'invoice' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
       </div>
-      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="submit" className="button primary">Simpan {labels[document.type]}</button></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button>{['quotation', 'invoice'].includes(document.type) && <button type="button" className="button subtle draft-save-button" onClick={onSaveDraft}>Masukkan ke Draft</button>}<button type="submit" className="button primary">Simpan {labels[document.type]}</button></div>
     </form>
   </div>
 }
@@ -683,9 +870,9 @@ function Field({ label, required = false, className = '', children }) {
   return <label className={`field ${className}`}><span>{label}{required && <b> *</b>}</span>{children}</label>
 }
 
-function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave }) {
+function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft }) {
   const invoice = documents.find((row) => row.id === receipt.invoiceId)
-  const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
   const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments) : 0
   const changeInvoice = (id) => {
     const selected = documents.find((row) => row.id === id)
@@ -693,9 +880,9 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
   }
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <form className="modal compact-modal" onSubmit={onSave}>
-      <div className="modal-head"><div><span className="eyebrow">DOKUMEN</span><h2>Buat Kwitansi</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="modal-head"><div><h2>Buat Kwitansi</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
       <div className="modal-body"><section className="form-section"><div className="form-grid">
-        <Field label="Invoice" required className="full"><select required value={receipt.invoiceId} onChange={(event) => changeInvoice(event.target.value)}><option value="">Pilih invoice</option>{documents.filter((doc) => doc.type === 'invoice').map((doc) => <option key={doc.id} value={doc.id}>{doc.number} · {doc.companyName} · {money(Math.max(0, docTotal(doc) - receipts.filter((row) => row.invoiceId === doc.id && row.id !== receipt.id).reduce((sum, row) => sum + Number(row.amount || 0), 0)))}</option>)}</select></Field>
+        <Field label="Invoice" required className="full"><select required value={receipt.invoiceId} onChange={(event) => changeInvoice(event.target.value)}><option value="">Pilih invoice</option>{documents.filter((doc) => doc.type === 'invoice').map((doc) => <option key={doc.id} value={doc.id}>{doc.number} · {doc.companyName} · {money(Math.max(0, docTotal(doc) - receipts.filter((row) => row.invoiceId === doc.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)))}</option>)}</select></Field>
         <Field label="Nomor kwitansi"><input value={receipt.number} onChange={(event) => setReceipt((state) => ({ ...state, number: event.target.value }))}/></Field>
         <Field label="Tanggal pembayaran" required><DateInput required ariaLabel="Tanggal pembayaran" value={receipt.date} onChange={(nextDateValue) => setReceipt((state) => {
           const nextDate = nextDateValue
@@ -708,12 +895,12 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
         <Field label="Telah terima dari"><input value={receipt.receivedFrom} onChange={(event) => setReceipt((state) => ({ ...state, receivedFrom: event.target.value }))}/></Field>
         <Field label="Jumlah pembayaran" required><AmountInput required value={receipt.amount} onValueChange={(value) => setReceipt((state) => ({ ...state, amount: value, amountWords: amountInWords(value) }))}/></Field>
         <Field label="Metode pembayaran"><select value={receipt.method} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option><option value="lainnya">Lainnya</option></select></Field>
-        <Field label="Status pengiriman kwitansi"><select value={receipt.sendStatus || 'Belum Dikirim'} onChange={e => setReceipt(v => ({...v,sendStatus:e.target.value}))}><option>Belum Dikirim</option><option>Terkirim</option></select></Field>
+        <Field label="Status pengiriman kwitansi"><select value={receipt.sendStatus || 'Belum Dikirim'} onChange={e => setReceipt(v => ({...v,sendStatus:e.target.value}))}><option>Draft</option><option>Belum Dikirim</option><option>Terkirim</option></select></Field>
         <Field label="Untuk pembayaran" className="full"><input value={receipt.description} onChange={(event) => setReceipt((state) => ({ ...state, description: event.target.value }))}/></Field>
         <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
         <div className="full outstanding"><span>Sisa invoice</span><strong>{money(remaining)}</strong></div>
       </div></section></div>
-      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="submit" className="button primary">Simpan Kwitansi</button></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="button" className="button subtle draft-save-button" onClick={onSaveDraft}>Masukkan ke Draft</button><button type="submit" className="button primary">Simpan Kwitansi</button></div>
     </form>
   </div>
 }
@@ -729,7 +916,7 @@ function SettingsModal({ settings, setSettings, onClose, onSave }) {
   }
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <form className="modal compact-modal settings-modal" onSubmit={onSave}>
-      <div className="modal-head"><div><h2>Identitas Perusahaan</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="modal-head"><div className="settings-title"><span className="settings-title-icon"><Icon name="settings"/></span><div><h2>Detail Perusahaan</h2><p>Kelola identitas dan informasi pembayaran perusahaan.</p></div></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
       <div className="modal-body"><section className="form-section"><div className="form-grid">
         {[['name','Nama perusahaan'],['description','Deskripsi'],['legal_number','No. SK Menkumham'],['business_number','NIB'],['phone','Telepon / Fax'],['email','Email'],['website','Website'],['address','Alamat kantor'],['bank_name','Nama bank'],['bank_account','Nomor rekening'],['bank_account_name','Nama pemilik rekening'],['signatory_name','Penandatangan penawaran'],['invoice_signatory_name','Penandatangan invoice / kuitansi']].map(([key,label]) => <Field key={key} label={label} className={key === 'description' || key === 'address' ? 'full' : ''}><input value={settings[key] || ''} onChange={(event) => update(key, event.target.value)}/></Field>)}
         {['logo','signatureStamp'].map((key) => <Field key={key} label={{logo:'Logo',signatureStamp:'Upload Cap dan Tanda Tangan'}[key]}><input type="file" accept="image/*" onChange={(event) => image(key, event.target.files[0])}/>{settings[key] && <span className="file-status">Gambar sudah dipilih</span>}</Field>)}
