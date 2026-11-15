@@ -254,7 +254,7 @@ function App() {
 
     const timeout = window.setTimeout(() => {
       setMessage((current) => current === message ? '' : current)
-    }, 4500)
+    }, 3000)
 
     return () => window.clearTimeout(timeout)
   }, [message])
