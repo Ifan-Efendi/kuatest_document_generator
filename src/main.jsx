@@ -235,13 +235,15 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [modal, setModal] = useState(null)
+  const modalRef = useRef(modal)
+  modalRef.current = modal
   const [docForm, setDocForm] = useState(null)
   const [receiptForm, setReceiptForm] = useState(null)
   const [settingsForm, setSettingsForm] = useState(defaultCompany)
   const [ready, setReady] = useState(false)
   const [message, setMessage] = useState('')
   const [downloadingPdf, setDownloadingPdf] = useState(null)
-  const [savingDocument, setSavingDocument] = useState(false)
+  const savingDocumentIds = useRef(new Set())
   const [viewingPdf, setViewingPdf] = useState(null)
   const [pendingPreview, setPendingPreview] = useState(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -441,7 +443,7 @@ function App() {
 
   const saveDoc = async (event, asDraft = false) => {
     event?.preventDefault?.()
-    if (savingDocument) return
+    if (savingDocumentIds.current.has(docForm.id)) return
 
     const form = {
       ...docForm,
@@ -464,22 +466,27 @@ function App() {
     form.grandTotal = taxable + form.vatAmount
     form.billingLabel = form.billingStage === 'dp' ? `DP ${form.billingPercentage}%` : 'Tagihan Penuh'
 
-    setSavingDocument(true)
+    const previous = documents.find((row) => row.id === form.id) || null
+    savingDocumentIds.current.add(form.id)
+    setDocuments((rows) => {
+      const exists = rows.some((row) => row.id === form.id)
+      const next = exists ? rows.map((row) => row.id === form.id ? form : row) : [...rows, form]
+      return next.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    })
+    setModal(null)
     setMessage(`Menyimpan ${labels[form.type].toLowerCase()}...`)
-    try {
-      await saveDocument(form)
-      setDocuments((rows) => {
-        const exists = rows.some((row) => row.id === form.id)
-        const next = exists ? rows.map((row) => row.id === form.id ? form : row) : [...rows, form]
-        return next.sort((a, b) => String(b.date).localeCompare(String(a.date)))
-      })
-      setModal(null)
+    saveDocument(form).then(() => {
       setMessage(asDraft ? `${labels[form.type]} disimpan sebagai draft.` : `${labels[form.type]} tersimpan.`)
-    } catch (error) {
+    }).catch((error) => {
+      setDocuments((rows) => previous
+        ? rows.map((row) => row.id === form.id ? previous : row)
+        : rows.filter((row) => row.id !== form.id))
       setMessage(error.message || `${labels[form.type]} gagal disimpan.`)
-    } finally {
-      setSavingDocument(false)
-    }
+      if (!modalRef.current) {
+        setDocForm(form)
+        setModal('document')
+      }
+    }).finally(() => savingDocumentIds.current.delete(form.id))
   }
   const saveReceiptForm = async (event, asDraft = false) => {
     event?.preventDefault?.()
@@ -763,14 +770,14 @@ function App() {
 
     {!modal && <button type="button" className="floating-create-button" aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
 
-    {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)} isSaving={savingDocument}/>}
+    {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)}/>}
     {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)}/>}
     {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah detail perusahaan.</div>)}
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
 }
 
-function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, company, documents, receipts, isExisting, isSaving }) {
+function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, company, documents, receipts, isExisting }) {
   const set = (key, value) => setDocument((state) => ({ ...state, [key]: value }))
   const updateItem = (id, key, value) => setDocument((state) => ({ ...state, items: state.items.map((item) => item.id === id ? { ...item, [key]: value } : item) }))
   const addItem = () => setDocument((state) => ({ ...state, items: [...state.items, { id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }] }))
@@ -835,7 +842,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
         {document.type === 'quotation' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Kondisi perjanjian kerja" className="full"><textarea rows="5" value={document.workConditions || ''} onChange={(event) => set('workConditions', event.target.value)} /></Field><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
         {document.type === 'invoice' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
       </div>
-      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose} disabled={isSaving}>Batal</button>{['quotation', 'invoice'].includes(document.type) && <button type="button" className="button subtle draft-save-button" onClick={onSaveDraft} disabled={isSaving}>Masukkan ke Draft</button>}<button type="submit" className={`button primary${isSaving ? ' is-loading' : ''}`} disabled={isSaving} aria-busy={isSaving}>{isSaving && <Icon name="loading"/>}{isSaving ? 'Menyimpan...' : `Simpan ${labels[document.type]}`}</button></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button>{['quotation', 'invoice'].includes(document.type) && <button type="button" className="button subtle draft-save-button" onClick={onSaveDraft}>Masukkan ke Draft</button>}<button type="submit" className="button primary">Simpan {labels[document.type]}</button></div>
     </form>
   </div>
 }
