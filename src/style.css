@@ -2587,3 +2587,7 @@ html .app-shell .sidebar .brand span {
 .brand.logo-refresh { width: 100%; }
 .brand.logo-refresh:focus-visible,
 .topbar .mobile-brand:focus-visible { outline: 2px solid #ffcb19; outline-offset: 3px; }
+
+
+.auth-loading > p { display: flex; align-items: center; justify-content: center; gap: 9px; }
+.auth-loading > p .icon { width: 17px; height: 17px; animation: pdf-spinner .8s linear infinite; }
