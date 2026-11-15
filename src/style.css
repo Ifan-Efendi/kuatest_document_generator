@@ -2573,3 +2573,17 @@ html .app-shell .sidebar .brand span {
     cursor: auto;
   }
 }
+
+
+/* Auto-dismiss app toasts and make the brand mark reload the current page. */
+.brand.logo-refresh,
+.topbar .mobile-brand {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.brand.logo-refresh { width: 100%; }
+.brand.logo-refresh:focus-visible,
+.topbar .mobile-brand:focus-visible { outline: 2px solid #ffcb19; outline-offset: 3px; }
