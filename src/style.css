@@ -2604,3 +2604,18 @@ html .app-shell .sidebar .brand span {
     font-weight: 600;
   }
 }
+
+
+/* Ensure the visible mobile date text overrides the older compact date rule. */
+@media (max-width: 700px) {
+  .quotation-toolbar .search-filter .search-box input,
+  .quotation-toolbar .search-filter .search-box input::placeholder,
+  .quotation-toolbar .status-filter select,
+  .quotation-toolbar .period-filter select,
+  .quotation-toolbar .date-filter .date-input-shell,
+  .quotation-toolbar .date-filter .date-input-value,
+  .quotation-toolbar .date-filter .date-input-placeholder {
+    font-family: 'Plus Jakarta Sans', Arial, sans-serif !important;
+    font-size: 13px !important;
+  }
+}
