@@ -245,7 +245,6 @@ function App() {
   const [pendingPreview, setPendingPreview] = useState(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef(null)
-  const tableDragRef = useRef(null)
 
   const refresh = async (canPersistTagline = false) => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
@@ -632,51 +631,6 @@ function App() {
     }
   }
 
-  const handleTablePointerDown = (event) => {
-    if (!window.matchMedia('(max-width: 700px)').matches) return
-    if (event.pointerType === 'mouse' && event.button !== 0) return
-    if (event.target.closest('button, a, input, select, textarea')) return
-    tableDragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startScrollLeft: event.currentTarget.scrollLeft,
-      dragging: false,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-  const handleTablePointerMove = (event) => {
-    const drag = tableDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId || drag.cancelled) return
-    const deltaX = event.clientX - drag.startX
-    const deltaY = event.clientY - drag.startY
-    if (!drag.dragging && Math.max(Math.abs(deltaX), Math.abs(deltaY)) > 6) {
-      if (Math.abs(deltaY) > Math.abs(deltaX)) {
-        drag.cancelled = true
-        return
-      }
-      drag.dragging = true
-      event.currentTarget.classList.add('is-pointer-dragging')
-    }
-    if (drag.dragging) {
-      event.preventDefault()
-      event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
-    }
-  }
-  const handleTablePointerEnd = (event) => {
-    const drag = tableDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    event.currentTarget.classList.remove('is-pointer-dragging')
-    if (!drag.dragging) tableDragRef.current = null
-  }
-  const suppressTableClickAfterDrag = (event) => {
-    if (!tableDragRef.current?.dragging) return
-    event.preventDefault()
-    event.stopPropagation()
-    tableDragRef.current = null
-  }
-
   return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
     <aside className="sidebar">
       <div className="brand"><img src={company.logo || '/assets/company-logo.png'} alt=""/><div><strong>KUATEST</strong><strong>MEGA TAMA</strong></div></div>
@@ -726,7 +680,7 @@ function App() {
         </section>}
         <section className="table-card">
           <div className="table-toolbar quotation-toolbar"><div className="search-filter"><label htmlFor="document-search">Cari Dokumen</label><div className="search-box"><Icon name="search"/><input id="document-search" value={query} onChange={(event) => updateFilter('query', event.target.value)} placeholder="Cari nomor atau perusahaan..." aria-label="Cari dokumen"/></div></div><div className="status-filter"><label htmlFor="status-filter"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 8.5"/></svg><span>Status</span></label><select id="status-filter" value={statusFilter} onChange={(event) => updateFilter('status', event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Periode</span></label><select id="date-period" value={datePeriod} onChange={(event) => updateFilter('period', event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Tanggal</span></label><DateInput value={dateAnchor} onChange={(value) => updateFilter('date', value)} ariaLabel="Pilih tanggal acuan"/></div><button type="button" className="button apply-filter" onClick={() => { setAppliedFilters({ query, status: statusFilter, period: datePeriod, date: dateAnchor }); setCurrentPage(1) }}><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg>Terapkan</button></div>
-          <div className="table-scroll" onPointerDown={handleTablePointerDown} onPointerMove={handleTablePointerMove} onPointerUp={handleTablePointerEnd} onPointerCancel={handleTablePointerEnd} onClickCapture={suppressTableClickAfterDrag}><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
+          <div className="table-scroll"><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{visibleRecords.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
               const pdfKey = `${page}:${record.id}`

@@ -2405,19 +2405,6 @@ html .app-shell .sidebar .brand span {
   .page-content-quotation { padding-bottom: 232px; }
 }
 
-/* Let mobile users drag horizontally from anywhere inside the table. */
-@media (max-width: 700px) {
-  .table-scroll {
-    cursor: grab;
-    touch-action: pan-y;
-  }
-  .table-scroll.is-pointer-dragging {
-    cursor: grabbing;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-}
-
 /* Keep the expanded mobile status choices compact while matching the filter text. */
 @media (max-width: 700px) {
   .quotation-toolbar .status-filter select {
@@ -2515,4 +2502,74 @@ html .app-shell .sidebar .brand span {
   .settings-modal .form-section { padding: 12px; }
   .settings-modal .form-grid { gap: 12px; }
   .settings-modal .modal-foot { padding: 11px 14px; }
+}
+
+/* Compact the mobile period dropdown and date control. */
+@media (max-width: 700px) {
+  .quotation-toolbar .period-filter { min-height: 38px; }
+  .quotation-toolbar .period-filter select {
+    min-height: 34px;
+    padding-right: 7px;
+    padding-left: 8px;
+    font-size: 11px !important;
+  }
+  .quotation-toolbar .period-filter select option {
+    padding: 2px 7px;
+    font-size: 11px;
+    line-height: 1.1;
+  }
+  .quotation-toolbar .date-filter { min-height: 38px; }
+  .quotation-toolbar .date-filter .date-input-shell {
+    min-height: 34px;
+    padding-right: 7px;
+    padding-left: 8px;
+    font-size: 11px !important;
+  }
+  .quotation-toolbar .date-filter .date-input-value,
+  .quotation-toolbar .date-filter .date-input-placeholder {
+    font-size: 11px !important;
+  }
+  .quotation-toolbar .date-filter .icon { width: 15px; height: 15px; }
+}
+
+/* Compact the account popover on phones without changing the desktop menu. */
+@media (max-width: 700px) {
+  .account-popover {
+    top: calc(100% + 6px);
+    width: min(252px, calc(100vw - 18px));
+    padding: 6px;
+    border-radius: 12px;
+  }
+  .account-details {
+    gap: 3px;
+    padding: 8px 9px 9px;
+  }
+  .account-details strong { font-size: 12px; }
+  .account-details span { font-size: 10px; }
+  .account-details small {
+    margin-top: 2px;
+    padding: 3px 7px;
+    font-size: 10px;
+  }
+  .account-logout {
+    min-height: 34px;
+    margin-top: 4px;
+    padding: 0 9px;
+    gap: 7px;
+    font-size: 12px;
+  }
+  .account-logout .icon { width: 16px; height: 16px; }
+}
+
+/* Use native momentum scrolling for horizontal tables on iOS and other phones. */
+@media (max-width: 700px) {
+  .table-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: auto;
+    overscroll-behavior-x: contain;
+    scroll-behavior: auto;
+    cursor: auto;
+  }
 }
