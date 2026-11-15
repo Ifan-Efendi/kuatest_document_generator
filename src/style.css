@@ -2579,3 +2579,19 @@ html .app-shell .sidebar .brand span {
 .auth-loading > p .icon { width: 17px; height: 17px; animation: pdf-spinner .8s linear infinite; }
 
 .button.is-loading .icon { animation: pdf-spinner .8s linear infinite; }
+
+
+/* Unify and slightly enlarge mobile filter text for easier reading. */
+@media (max-width: 700px) {
+  .quotation-toolbar .search-box input,
+  .quotation-toolbar .status-filter select,
+  .quotation-toolbar .status-filter select option,
+  .quotation-toolbar .period-filter select,
+  .quotation-toolbar .period-filter select option,
+  .quotation-toolbar .date-filter .date-input-shell,
+  .quotation-toolbar .date-input-value,
+  .quotation-toolbar .date-input-placeholder {
+    font-family: 'Plus Jakarta Sans', Arial, sans-serif !important;
+    font-size: 13px !important;
+  }
+}
