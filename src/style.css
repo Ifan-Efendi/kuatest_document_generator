@@ -2619,3 +2619,13 @@ html .app-shell .sidebar .brand span {
     font-size: 13px !important;
   }
 }
+
+
+/* Leave enough desktop scroll room for pagination to clear the fixed create button. */
+@media (min-width: 701px) {
+  .page-content.page-content-quotation,
+  .page-content.page-content-invoice,
+  .page-content.page-content-receipt {
+    padding-bottom: 160px;
+  }
+}
