@@ -115,7 +115,9 @@ function numberFor(type, date, documents, receipts, baselines = {}) {
     .filter((row) => String(row.number || '').endsWith(`/${code}/KMT/${months[Number(month)]}/${year}`))
     .map((row) => Number(String(row.number).split('/')[0]) || 0)
   const baseline = Number(baselines?.[`${year}-${month}`]?.[type] ?? 0)
-  const next = Math.max(0, baseline, ...matches) + 1
+  const taken = new Set(matches)
+  let next = Math.max(0, baseline) + 1
+  while (taken.has(next)) next += 1
   return `${String(next).padStart(4, '0')}/${code}/KMT/${months[Number(month)]}/${year}`
 }
 
@@ -377,7 +379,16 @@ function App() {
       : ['Draft', 'Belum Dikirim', 'Terkirim']
   const filtered = useMemo(() => {
     const filters = appliedFilters
-    return items.filter((row) => {
+    const orderedItems = [...items].sort((a, b) => {
+      const dateOrder = String(b.date || '').localeCompare(String(a.date || ''))
+      if (dateOrder) return dateOrder
+      const sequence = (record) => {
+        const value = Number.parseInt(String(record.number || '').split('/')[0], 10)
+        return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER
+      }
+      return sequence(a) - sequence(b)
+    })
+    return orderedItems.filter((row) => {
       const searchable = (row.number + ' ' + (row.companyName || row.receivedFrom || '') + ' ' + (row.status || '')).toLowerCase()
       const rowStatus = page === 'receipt' ? row.sendStatus || 'Belum Dikirim' : page === 'invoice' ? invoiceStatusValue(row.status) : row.status || 'Draft'
       const matchesStatus = filters.status === 'all' || rowStatus === filters.status
