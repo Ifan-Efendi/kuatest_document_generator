@@ -245,19 +245,36 @@ export function receiptPdf(receipt, invoice, company, fileName = '') {
   return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(receiptCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
 }
 
-async function compactPdfImage(value) {
-  if (typeof value !== 'string' || !value.startsWith('data:image/') || value.startsWith('data:image/svg+xml')) return value
+async function compactPdfImage(value, maxDimension, quality) {
+  if (typeof value !== 'string' || !value.startsWith('data:image/')) return value
+  let blob
+  try { blob = await (await fetch(value)).blob() } catch { return value }
   let source
-  try { source = await createImageBitmap(await (await fetch(value)).blob()) } catch { return value }
-  const scale = Math.min(1, 1600 / Math.max(source.width, source.height))
-  if (scale === 1 && value.length < 160_000) { source.close(); return value }
+  let releaseSource = () => {}
+  try {
+    source = await createImageBitmap(blob)
+    releaseSource = () => source.close()
+  } catch {
+    try {
+      const objectUrl = URL.createObjectURL(blob)
+      source = await new Promise((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => resolve(image)
+        image.onerror = reject
+        image.src = objectUrl
+      })
+      releaseSource = () => URL.revokeObjectURL(objectUrl)
+    } catch { return value }
+  }
+  const scale = Math.min(1, maxDimension / Math.max(source.width, source.height))
+  if (scale === 1 && blob.size < 40_000) { releaseSource(); return value }
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(source.width * scale))
   canvas.height = Math.max(1, Math.round(source.height * scale))
   canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height)
-  source.close()
-  const compressed = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.82))
-  if (!compressed || compressed.size >= Math.ceil(value.length * 0.75)) return value
+  releaseSource()
+  const compressed = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', quality))
+  if (!compressed || (scale === 1 && compressed.size >= blob.size)) return value
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result)
@@ -266,12 +283,12 @@ async function compactPdfImage(value) {
   })
 }
 
-async function compactPdfPayload(payload) {
+async function compactPdfPayload(payload, maxDimension, quality) {
   const copy = JSON.parse(JSON.stringify(payload))
   const imageCache = new Map()
   const visit = async (value) => {
     if (typeof value === 'string' && value.startsWith('data:image/')) {
-      if (!imageCache.has(value)) imageCache.set(value, compactPdfImage(value))
+      if (!imageCache.has(value)) imageCache.set(value, compactPdfImage(value, maxDimension, quality))
       return imageCache.get(value)
     }
     if (Array.isArray(value)) {
@@ -291,10 +308,15 @@ async function renderPdf(payload, fileName) {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) throw new Error('Silakan masuk kembali untuk membuat PDF.')
-  const preparedPayload = await compactPdfPayload({ ...payload, fileName })
-  const requestBody = JSON.stringify(preparedPayload)
+  let preparedPayload = { ...payload, fileName }
+  let requestBody = ''
+  for (const [maxDimension, quality] of [[1200, 0.72], [960, 0.58], [760, 0.46], [600, 0.36]]) {
+    preparedPayload = await compactPdfPayload(preparedPayload, maxDimension, quality)
+    requestBody = JSON.stringify(preparedPayload)
+    if (new TextEncoder().encode(requestBody).byteLength <= 3_500_000) break
+  }
   if (new TextEncoder().encode(requestBody).byteLength > 3_500_000) {
-    throw new Error('Foto pada dokumen terlalu besar untuk dibuat PDF. Hapus atau kecilkan beberapa foto produk, lalu coba lagi.')
+    throw new Error('Ukuran data dokumen melebihi batas PDF Vercel.')
   }
   const response = await fetch('/api/render-pdf', {
     method: 'POST',
