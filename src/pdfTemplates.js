@@ -1,4 +1,4 @@
-﻿import { invoiceCss, quotationCss, receiptCss } from './pdfStyles.js'
+import { invoiceCss, quotationCss, receiptCss } from './pdfStyles.js'
 
 const h = (value = '') => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character])
 const rupiah = (value) => Number(value || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

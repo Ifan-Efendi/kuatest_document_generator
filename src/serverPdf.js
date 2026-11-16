@@ -1,4 +1,4 @@
-﻿import puppeteer from 'puppeteer-core'
+import puppeteer from 'puppeteer-core'
 import { documentPdf, receiptPdf } from './pdfTemplates.js'
 
 export const maxPdfRequestBytes = 3_500_000
