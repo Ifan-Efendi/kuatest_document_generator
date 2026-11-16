@@ -2981,3 +2981,5 @@ html .app-shell .sidebar .brand span {
 @media (prefers-reduced-motion: reduce) {
   .icon-button.is-loading .icon { animation: pdf-spinner .8s linear infinite !important; }
 }
+
+.cache-state { color: #758197; font-size: 11px; font-weight: 500; }

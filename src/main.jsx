@@ -96,6 +96,65 @@ const pdfFileName = (type, number, companyName) => {
   return `${title} ${safeFilePart(sequence, 'TANPA-NOMOR')} - ${safeFilePart(companyName, 'TANPA-NAMA')}.pdf`
 }
 
+const workspaceCachePrefix = 'kuatest:workspace:v1:'
+const workspaceCacheTtl = 5 * 60 * 1000
+const workspaceCacheKey = (profile) => `${workspaceCachePrefix}${encodeURIComponent(profile.user_id)}:${encodeURIComponent(profile.company_id)}`
+const cacheRecord = (record) => ({
+  id: record.id, type: record.type, number: record.number, date: record.date,
+  companyName: record.companyName || '', receivedFrom: record.receivedFrom || '',
+  status: record.status || '', sendStatus: record.sendStatus || '', amount: record.amount ?? 0,
+  items: (record.items || []).map((item) => ({ quantity: item.quantity, price: item.price, total: item.total })),
+  shippingFee: record.shippingFee || 0, discount: record.discount || 0,
+  vatRate: record.vatRate || 0, pphRate: record.pphRate || 0,
+  vatAmount: record.vatAmount || 0, pph: record.pph || 0,
+})
+const validCachedRecords = (records, documents = false) => records.every((record) =>
+  record && typeof record === 'object' && typeof record.id === 'string' && typeof record.number === 'string' &&
+  (!documents || ['quotation', 'invoice'].includes(record.type)) &&
+  (record.items === undefined || (Array.isArray(record.items) && record.items.every((item) => item && typeof item === 'object')))
+)
+function readWorkspaceCache(profile) {
+  const key = workspaceCacheKey(profile)
+  try {
+    const value = sessionStorage.getItem(key)
+    if (!value) return null
+    const cache = JSON.parse(value)
+    const age = Date.now() - Number(cache.savedAt)
+    if (cache.version !== 1 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || age > workspaceCacheTtl || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) {
+      sessionStorage.removeItem(key)
+      return null
+    }
+    return cache
+  } catch {
+    try { sessionStorage.removeItem(key) } catch { /* session storage can be unavailable */ }
+    return null
+  }
+}
+function writeWorkspaceCache(profile, documents, receipts) {
+  if (!profile?.user_id || !profile?.company_id) return
+  const key = workspaceCacheKey(profile)
+  try {
+    const value = JSON.stringify({
+      version: 1, userId: profile.user_id, companyId: profile.company_id, savedAt: Date.now(),
+      documents: documents.map(cacheRecord), receipts: receipts.map(cacheRecord),
+    })
+    if (value.length > 1_500_000) {
+      sessionStorage.removeItem(key)
+      return
+    }
+    sessionStorage.setItem(key, value)
+  } catch {
+    try { sessionStorage.removeItem(key) } catch { /* session storage can be unavailable */ }
+  }
+}
+function clearWorkspaceCaches(keepKey = null) {
+  try {
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index)
+      if (key?.startsWith(workspaceCachePrefix) && key !== keepKey) sessionStorage.removeItem(key)
+    }
+  } catch { /* session storage can be unavailable */ }
+}
 async function embedAsset(value) {
   if (!value || String(value).startsWith('data:')) return value
   const response = await fetch(value)
@@ -251,6 +310,7 @@ function App() {
   const [recordsStatus, setRecordsStatus] = useState('loading')
   const [message, setMessage] = useState('')
   const sessionLoadRef = useRef(0)
+  const activeWorkspaceRef = useRef(null)
   const savingReceiptRef = useRef(false)
   const [downloadingPdf, setDownloadingPdf] = useState(null)
   const savingDocumentIds = useRef(new Set())
@@ -270,6 +330,10 @@ function App() {
     return () => window.clearTimeout(timeout)
   }, [message])
 
+  useEffect(() => {
+    if (recordsStatus !== 'ready' || !profile?.user_id || !profile?.company_id) return
+    writeWorkspaceCache(profile, documents, receipts)
+  }, [recordsStatus, profile?.user_id, profile?.company_id, documents, receipts])
   const refresh = async (canPersistTagline = false) => {
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
     setDocuments(savedDocuments.sort((a, b) => String(b.date).localeCompare(String(a.date))))
@@ -308,21 +372,44 @@ function App() {
       if (!active) return
       const loadId = ++sessionLoadRef.current
       const nextUser = session?.user || null
+      if (activeWorkspaceRef.current && activeWorkspaceRef.current.user_id !== nextUser?.id) {
+        setProfile(null)
+        setWorkspace(null)
+        setDocuments([])
+        setReceipts([])
+        activeWorkspaceRef.current = null
+        clearWorkspaceCaches()
+      }
       setUser(nextUser)
       if (!nextUser) {
         setProfile(null)
         setWorkspace(null)
         setDocuments([])
         setReceipts([])
+        activeWorkspaceRef.current = null
+        clearWorkspaceCaches()
         setRecordsStatus('idle')
         setReady(true)
         return
       }
       setRecordsStatus('loading')
+      let cachedWorkspace = null
       try {
         const nextProfile = await loadProfile(nextUser.id)
         if (!active || loadId !== sessionLoadRef.current) return
+        if (activeWorkspaceRef.current && (activeWorkspaceRef.current.user_id !== nextProfile.user_id || activeWorkspaceRef.current.company_id !== nextProfile.company_id)) {
+          setDocuments([])
+          setReceipts([])
+        }
         setWorkspace(nextProfile); setProfile(nextProfile)
+        activeWorkspaceRef.current = nextProfile
+        cachedWorkspace = readWorkspaceCache(nextProfile)
+        clearWorkspaceCaches(workspaceCacheKey(nextProfile))
+        if (cachedWorkspace) {
+          setDocuments(cachedWorkspace.documents)
+          setReceipts(cachedWorkspace.receipts)
+          setRecordsStatus('cached')
+        }
         // Authentication and role are ready; render the app shell while
         // document queries continue in the background.
         setReady(true)
@@ -331,7 +418,7 @@ function App() {
         setRecordsStatus('ready')
       } catch (error) {
         if (active && loadId === sessionLoadRef.current) {
-          setRecordsStatus('error')
+          setRecordsStatus(cachedWorkspace ? 'cached-error' : 'error')
           setMessage(error.message)
           setReady(true)
         }
@@ -433,6 +520,8 @@ function App() {
     setWorkspace(null)
     setDocuments([])
     setReceipts([])
+    activeWorkspaceRef.current = null
+    clearWorkspaceCaches()
     setRecordsStatus('idle')
     setReady(true)
     sessionLoadRef.current += 1
@@ -493,7 +582,8 @@ function App() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, pageCount)
   const visibleRecords = filtered.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
-  const displayStat = (value) => recordsStatus === 'ready' ? value : recordsStatus === 'loading' ? '…' : '—'
+  const actionsLocked = recordsStatus !== 'ready'
+  const displayStat = (value) => ['ready', 'cached', 'cached-error'].includes(recordsStatus) ? value : recordsStatus === 'loading' ? '…' : '—'
 
   if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
   if (!ready) return <main className="auth-screen"><section className="auth-card auth-loading" role="status" aria-live="polite"><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p><Icon name="loading"/>Memeriksa sesi...</p></section></main>
@@ -901,7 +991,7 @@ function App() {
 
     <main className="main-area">
       <header className="topbar"><button type="button" className="topbar-menu" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={sidebarCollapsed ? "m9 5 7 7-7 7" : "m15 5-7 7 7 7"}/></svg></button><div className="mobile-brand"><img src={company.logo || '/assets/company-logo.png'} alt=""/><span>KUATEST<br/>MEGA TAMA</span></div><nav className="topbar-nav" aria-label="Navigasi utama">{['quotation', 'invoice', 'receipt'].map((key) => <button type="button" key={key} className={`top-nav-item ${page === key ? 'active' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => { setPage(key); setQuery(''); setStatusFilter('all'); setDatePeriod('all'); setDateAnchor(today()); setAppliedFilters({ query: '', status: 'all', period: 'all', date: today() }); setCurrentPage(1) }}>{labels[key]}</button>)}</nav><div className="topbar-right">
-        {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" onClick={showSettings} title="Detail perusahaan" aria-label="Detail perusahaan"><Icon name="settings"/></button>}
+        {profile.role === 'director' && <button type="button" className="icon-button settings-trigger" disabled={actionsLocked} onClick={showSettings} title="Detail perusahaan" aria-label="Detail perusahaan"><Icon name="settings"/></button>}
         <div className="account-menu" ref={userMenuRef}>
           <button type="button" className="account-trigger" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu akun" aria-expanded={userMenuOpen} aria-haspopup="menu"><span className="account-avatar"><Icon name="user"/></span><span className="account-name">{profile.role === 'director' ? 'Direktur' : 'Admin'}</span><svg className="account-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg></button>
           {userMenuOpen && <div className="account-popover" role="menu">
@@ -914,8 +1004,8 @@ function App() {
       <section className={`page-content page-content-${page}`}>
         <div className={`page-heading${page === 'quotation' ? ' quotation-heading' : ' document-heading'}`}><div className="heading-copy"><h1>{title}</h1><p>{page === 'receipt' ? 'Penerimaan pembayaran dari invoice' : page === 'quotation' ? 'Daftar penawaran pelanggan' : 'Daftar tagihan pelanggan'}</p></div>
           {page === 'receipt'
-            ? <button className="button primary" onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
-            : <button type="button" className="button primary" onClick={() => startDocument(page)}><Icon name="plus"/>Buat {title}</button>}
+            ? <button className="button primary" disabled={actionsLocked} onClick={() => startReceipt()}><Icon name="plus"/>Buat Kwitansi</button>
+            : <button type="button" className="button primary" disabled={actionsLocked} onClick={() => startDocument(page)}><Icon name="plus"/>Buat {title}</button>}
           {['quotation', 'invoice', 'receipt'].includes(page) && <div className="hero-illustration" aria-hidden="true"><svg viewBox="0 0 270 250" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><filter id="clipboard-shadow" x="22" y="16" width="238" height="235" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="9"/></filter><linearGradient id="clipboard-frame" x1="54" y1="44" x2="204" y2="216" gradientUnits="userSpaceOnUse"><stop stopColor="#67B8FF"/><stop offset="1" stopColor="#0872DF"/></linearGradient></defs><ellipse cx="136" cy="218" rx="92" ry="17" fill="#062E68" fillOpacity=".45" filter="url(#clipboard-shadow)"/><g transform="rotate(10 135 127)"><rect x="51" y="38" width="158" height="184" rx="22" fill="url(#clipboard-frame)"/><rect x="65" y="52" width="130" height="154" rx="13" fill="#F8FBFF"/><rect x="111" y="34" width="55" height="26" rx="8" fill="#F8B900"/><rect x="119" y="29" width="39" height="10" rx="5" fill="#FFD64A"/><rect x="82" y="79" width="20" height="20" rx="4" fill="#E9F4FF" stroke="#1473D1" strokeWidth="3"/><path d="m87 88 4 4 7-9" stroke="#1473D1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/><path d="M116 85h54M116 94h40" stroke="#8FA8C8" strokeWidth="5" strokeLinecap="round"/><rect x="82" y="116" width="20" height="20" rx="4" fill="#E9F4FF" stroke="#1473D1" strokeWidth="3"/><path d="m87 125 4 4 7-9" stroke="#1473D1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/><path d="M116 122h54M116 131h34" stroke="#8FA8C8" strokeWidth="5" strokeLinecap="round"/><rect x="82" y="153" width="20" height="20" rx="4" fill="#E9F4FF" stroke="#A7BAD3" strokeWidth="3"/><path d="M116 159h49M116 168h31" stroke="#A7BAD3" strokeWidth="5" strokeLinecap="round"/></g><g transform="rotate(28 203 158)"><path d="M204 82 216 90 163 187 151 179 204 82Z" fill="#0B75D1"/><path d="m151 179 12 8-17 19 5-27Z" fill="#F6C04A"/><path d="m147 194-1 12 8-9" fill="#143965"/><path d="m204 82 6-11a7 7 0 0 1 12 7l-6 12-12-8Z" fill="#F5B825"/><path d="m202 86 12 8" stroke="#DCEEFF" strokeWidth="4"/></g></svg></div>}
         </div>
 
@@ -949,49 +1039,49 @@ function App() {
               const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
               const rowDate = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))
               return <tr key={record.id} className="document-row" onClick={(event) => {
-                if (event.target.closest('.status-cell, td:last-child, button, select, a, input, textarea')) return
+                if (actionsLocked || event.target.closest('.status-cell, td:last-child, button, select, a, input, textarea')) return
                 if (page === 'receipt') editReceipt(record)
                 else editDocument(record)
               }}>
                 <td className={'number-cell number-cell-' + page}><span className="row-document-icon"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></td>
-                {page === 'quotation' ? <><td>{rowDate}</td><td className="company-cell">{record.companyName || '-'}</td><td className="status-cell"><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                {page === 'quotation' ? <><td>{rowDate}</td><td className="company-cell">{record.companyName || '-'}</td><td className="status-cell"><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked}>
                   {['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}
                 </select></td><td className="amount-cell">{money(docTotal(record))}</td></> : <>
                   <td>{rowDate}</td>
                   <td>{record.companyName || record.receivedFrom || '-'}</td>
-                  <td className="status-cell">{page === 'receipt' ? <select className="status-select" value={record.sendStatus || 'Belum Dikirim'} onChange={(event) => changeReceiptStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                  <td className="status-cell">{page === 'receipt' ? <select className="status-select" value={record.sendStatus || 'Belum Dikirim'} onChange={(event) => changeReceiptStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked}>
                     {['Draft', 'Belum Dikirim', 'Terkirim'].map((status) => <option key={status}>{status}</option>)}
-                  </select> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                  </select> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked}>
                     {statusOptions.map((status) => <option key={status}>{status}</option>)}
                   </select>}</td>
                   <td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
                 </>}
                 <td><div className={`row-actions${page === 'quotation' ? ' quotation-actions' : ''}`}>
                   {page === 'quotation' ? <>
-                    <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title="Lihat PDF" aria-label="Lihat PDF" disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
-                    <button type="button" className={isDownloadingPdf ? "icon-button is-loading" : "icon-button"} title={isDownloadingPdf ? "Mengunduh PDF..." : "Unduh PDF"} aria-label="Unduh PDF" disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
-                    <button type="button" className="icon-button" title="Buat invoice" aria-label="Buat invoice" onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>
-                    <button type="button" className="icon-button" title="Ubah" aria-label="Ubah penawaran" onClick={() => editDocument(record)}><Icon name="edit"/></button>
-                    {profile.role === 'director' && <button type="button" className="icon-button danger" title="Hapus penawaran" aria-label="Hapus penawaran" onClick={() => remove(record, 'documents')}><Icon name="trash"/></button>}
+                    <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title="Lihat PDF" aria-label="Lihat PDF" disabled={isPdfBusy || actionsLocked} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
+                    <button type="button" className={isDownloadingPdf ? "icon-button is-loading" : "icon-button"} title={isDownloadingPdf ? "Mengunduh PDF..." : "Unduh PDF"} aria-label="Unduh PDF" disabled={isPdfBusy || actionsLocked} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
+                    <button type="button" className="icon-button" title="Buat invoice" aria-label="Buat invoice" disabled={actionsLocked} onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>
+                    <button type="button" className="icon-button" title="Ubah" aria-label="Ubah penawaran" disabled={actionsLocked} onClick={() => editDocument(record)}><Icon name="edit"/></button>
+                    {profile.role === 'director' && <button type="button" className="icon-button danger" title="Hapus penawaran" aria-label="Hapus penawaran" disabled={actionsLocked} onClick={() => remove(record, 'documents')}><Icon name="trash"/></button>}
                     </> : <>
-                    <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF...' : 'Lihat PDF'} aria-label="Lihat PDF" disabled={isPdfBusy} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
-                    <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF...' : 'Unduh PDF'} aria-label="Unduh PDF" disabled={isPdfBusy} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
-                    <button className="icon-button" title="Ubah" onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
-                    {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
-                    {profile.role === 'director' && <button className="icon-button danger" title="Hapus" onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
+                    <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF...' : 'Lihat PDF'} aria-label="Lihat PDF" disabled={isPdfBusy || actionsLocked} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
+                    <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF...' : 'Unduh PDF'} aria-label="Unduh PDF" disabled={isPdfBusy || actionsLocked} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
+                    <button className="icon-button" title="Ubah" disabled={actionsLocked} onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
+                    {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" disabled={actionsLocked} onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
+                    {profile.role === 'director' && <button className="icon-button danger" title="Hapus" disabled={actionsLocked} onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
                   </>}
                 </div></td>
               </tr>
             })}
-            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{recordsStatus === 'loading' ? 'Memuat data...' : recordsStatus === 'error' ? 'Data gagal dimuat. Muat ulang halaman untuk mencoba lagi.' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
+            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{recordsStatus === 'loading' ? 'Memuat data...' : ['error', 'cached-error'].includes(recordsStatus) ? 'Data gagal dimuat. Muat ulang halaman untuk mencoba lagi.' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
-          <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data</span><div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
+          <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data{recordsStatus === 'cached' ? <small className="cache-state"> · Memperbarui...</small> : recordsStatus === 'cached-error' ? <small className="cache-state"> · Data belum tersinkron</small> : null}</span><div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
         </section>
 
       </section>
     </main>
 
-    {!modal && <button type="button" className="floating-create-button" aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
+    {!modal && <button type="button" className="floating-create-button" disabled={actionsLocked} aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
 
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)} canEditPayment={profile.role === 'director'}/>}
     {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} setMessage={setMessage}/>}
