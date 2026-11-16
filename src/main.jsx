@@ -248,7 +248,6 @@ function App() {
   const [settingsForm, setSettingsForm] = useState(defaultCompany)
   const [ready, setReady] = useState(false)
   const [message, setMessage] = useState('')
-  const [savingReceipt, setSavingReceipt] = useState(false)
   const savingReceiptRef = useRef(false)
   const [downloadingPdf, setDownloadingPdf] = useState(null)
   const savingDocumentIds = useRef(new Set())
@@ -519,52 +518,84 @@ function App() {
     event?.preventDefault?.()
     if (savingReceiptRef.current) return
     savingReceiptRef.current = true
-    setSavingReceipt(true)
-    setMessage('Menyimpan kwitansi...')
-    try {
-      const invoice = documents.find((row) => row.id === receiptForm.invoiceId)
-      const number = receiptForm.number.trim() || receiptForm.autoNumber || numberFor('receipt', receiptForm.date, documents, receipts, company.numberBaselines)
-      if (!asDraft && (!invoice || Number(receiptForm.amount) <= 0 || !number)) {
-        setMessage('Pilih invoice dan isi nomor serta jumlah pembayaran.')
-        return
-      }
-      const otherPaid = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receiptForm.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
-      const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPaid) : 0
-      if (!asDraft && Number(receiptForm.amount) > remaining) {
-        setMessage(`Jumlah pembayaran melebihi sisa invoice ${money(remaining)}.`)
-        return
-      }
-      const saved = {
-        ...receiptForm,
-        method: ['transfer', 'tunai'].includes(receiptForm.method) ? receiptForm.method : 'transfer',
-        number,
-        invoiceId: invoice?.id || receiptForm.invoiceId || '',
-        invoiceNumber: invoice?.number || receiptForm.invoiceNumber || '',
-        companyName: invoice?.companyName || receiptForm.companyName || receiptForm.receivedFrom || '',
-        amount: asDraft ? receiptForm.amount : Number(receiptForm.amount),
-        amountWords: asDraft ? receiptForm.amountWords : receiptForm.amountWords.trim() || amountInWords(receiptForm.amount),
-        sendStatus: asDraft ? 'Draft' : receiptForm.sendStatus === 'Draft' ? 'Belum Dikirim' : receiptForm.sendStatus || 'Belum Dikirim',
-      }
-      await saveReceipt(saved)
-      if (invoice && !asDraft) {
-        const paidAfterSave = otherPaid + Number(saved.amount || 0)
-        const fullyPaid = paidAfterSave >= docTotal(invoice)
-        const paymentUpdates = fullyPaid
-          ? { status: 'Lunas', billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' }
-          : paidAfterSave > 0
-            ? { status: 'DP', billingStage: 'dp', billingPercentage: 50, downPaymentAmount: paidAfterSave }
-            : null
-        if (paymentUpdates) await saveDocument({ ...invoice, ...paymentUpdates })
-      }
-      await refresh()
-      setModal(null)
-      setMessage(asDraft ? 'Kwitansi disimpan sebagai draft.' : 'Kwitansi tersimpan.')
-    } catch (error) {
-      setMessage(error?.message || 'Kwitansi gagal disimpan. Periksa koneksi lalu coba lagi.')
-    } finally {
+    const form = receiptForm
+    const invoice = documents.find((row) => row.id === form.invoiceId)
+    const number = form.number.trim() || form.autoNumber || numberFor('receipt', form.date, documents, receipts, company.numberBaselines)
+    if (!asDraft && (!invoice || Number(form.amount) <= 0 || !number)) {
       savingReceiptRef.current = false
-      setSavingReceipt(false)
+      setMessage('Pilih invoice dan isi nomor serta jumlah pembayaran.')
+      return
     }
+    const otherPaid = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== form.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPaid) : 0
+    if (!asDraft && Number(form.amount) > remaining) {
+      savingReceiptRef.current = false
+      setMessage(`Jumlah pembayaran melebihi sisa invoice ${money(remaining)}.`)
+      return
+    }
+    const saved = {
+      ...form,
+      method: ['transfer', 'tunai'].includes(form.method) ? form.method : 'transfer',
+      number,
+      invoiceId: invoice?.id || form.invoiceId || '',
+      invoiceNumber: invoice?.number || form.invoiceNumber || '',
+      companyName: invoice?.companyName || form.companyName || form.receivedFrom || '',
+      amount: asDraft ? form.amount : Number(form.amount),
+      amountWords: asDraft ? form.amountWords : form.amountWords.trim() || amountInWords(form.amount),
+      sendStatus: asDraft ? 'Draft' : form.sendStatus === 'Draft' ? 'Belum Dikirim' : form.sendStatus || 'Belum Dikirim',
+    }
+    const previousReceipt = receipts.find((row) => row.id === form.id) || null
+    let updatedInvoice = null
+    let previousInvoice = null
+    if (invoice && !asDraft) {
+      const paidAfterSave = otherPaid + Number(saved.amount || 0)
+      const fullyPaid = paidAfterSave >= docTotal(invoice)
+      const paymentUpdates = fullyPaid
+        ? { status: 'Lunas', billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' }
+        : paidAfterSave > 0
+          ? { status: 'DP', billingStage: 'dp', billingPercentage: 50, downPaymentAmount: paidAfterSave }
+          : null
+      if (paymentUpdates) {
+        previousInvoice = invoice
+        updatedInvoice = { ...invoice, ...paymentUpdates }
+      }
+    }
+    setReceipts((rows) => {
+      const exists = rows.some((row) => row.id === saved.id)
+      const next = exists ? rows.map((row) => row.id === saved.id ? saved : row) : [...rows, saved]
+      return next.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    })
+    if (updatedInvoice) setDocuments((rows) => rows.map((row) => row.id === updatedInvoice.id ? updatedInvoice : row))
+    setModal(null)
+    setMessage('Menyimpan kwitansi...')
+    void (async () => {
+      let receiptPersisted = false
+      try {
+        await saveReceipt(saved)
+        receiptPersisted = true
+        if (updatedInvoice) await saveDocument(updatedInvoice)
+        await refresh()
+        setMessage(asDraft ? 'Kwitansi disimpan sebagai draft.' : 'Kwitansi tersimpan.')
+      } catch (error) {
+        if (receiptPersisted) {
+          try {
+            if (previousReceipt) await saveReceipt(previousReceipt)
+            else await deleteRecord('receipts', saved.id)
+          } catch { /* refresh below reconciles local state */ }
+        }
+        setReceipts((rows) => previousReceipt
+          ? rows.map((row) => row.id === saved.id ? previousReceipt : row)
+          : rows.filter((row) => row.id !== saved.id))
+        if (previousInvoice) setDocuments((rows) => rows.map((row) => row.id === previousInvoice.id ? previousInvoice : row))
+        setMessage(error?.message || 'Kwitansi gagal disimpan. Periksa koneksi lalu coba lagi.')
+        if (!modalRef.current) {
+          setReceiptForm(saved)
+          setModal('receipt')
+        }
+      } finally {
+        savingReceiptRef.current = false
+      }
+    })()
   }
 
   const changeStatus = async (document, status) => {
@@ -881,7 +912,7 @@ function App() {
     {!modal && <button type="button" className="floating-create-button" aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
 
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)} canEditPayment={profile.role === 'director'}/>}
-    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} isSaving={savingReceipt} setMessage={setMessage}/>}
+    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} setMessage={setMessage}/>}
     {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah detail perusahaan.</div>)}
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
@@ -1001,7 +1032,7 @@ function Field({ label, required = false, className = '', children }) {
   return <label className={`field ${className}`}><span>{label}{required && <b> *</b>}</span>{children}</label>
 }
 
-function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft, isSaving, setMessage }) {
+function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft, setMessage }) {
   const invoice = documents.find((row) => row.id === receipt.invoiceId)
   const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
   const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments - Number(receipt.amount || 0)) : 0
@@ -1034,7 +1065,7 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
         <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
         <div className="full outstanding"><span>Sisa invoice</span><strong>{money(remaining)}</strong></div>
       </div></section></div>
-      <div className="modal-foot"><button type="button" className="button subtle" disabled={isSaving} onClick={onClose}>Batal</button><button type="button" className="button subtle draft-save-button" disabled={isSaving} onClick={onSaveDraft}>Masukkan ke Draft</button><button type="submit" className={`button primary receipt-submit-button${isSaving ? ' is-loading' : ''}`} disabled={isSaving} aria-live="polite">{isSaving && <span className="receipt-save-spinner" aria-hidden="true"/>}{isSaving ? 'Menyimpan kwitansi...' : 'Simpan Kwitansi'}</button></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button><button type="button" className="button subtle draft-save-button" onClick={onSaveDraft}>Masukkan ke Draft</button><button type="submit" className="button primary">Simpan Kwitansi</button></div>
     </form>
   </div>
 }

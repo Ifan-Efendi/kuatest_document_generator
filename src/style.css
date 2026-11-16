@@ -2586,8 +2586,6 @@ html .app-shell .sidebar .brand span {
 .auth-loading > p .icon { width: 17px; height: 17px; animation: pdf-spinner .8s linear infinite; }
 
 .button.is-loading .icon { animation: pdf-spinner .8s linear infinite; }
-.receipt-submit-button:disabled { opacity: .9; cursor: wait; }
-.receipt-save-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: pdf-spinner .8s linear infinite; }
 
 
 /* Unify and slightly enlarge mobile filter text for easier reading. */
