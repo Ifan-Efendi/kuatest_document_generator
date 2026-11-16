@@ -159,8 +159,12 @@ function AmountInput({ value, onValueChange, ...props }) {
     }} />
 }
 
-const invoiceStatuses = ['Draft', 'Belum Lunas', 'DP 50%', 'Lunas']
-const invoiceStatusValue = (status) => invoiceStatuses.includes(status) ? status : 'Belum Lunas'
+const invoiceStatuses = ['Draft', 'DP', 'Tagihan Penuh', 'Lunas']
+const invoiceStatusValue = (status) => {
+  if (status === 'DP 50%' || status === 'DP') return 'DP'
+  if (status === 'Belum Lunas' || status === 'Belum Bayar' || status === 'Tagihan Penuh') return 'Tagihan Penuh'
+  return invoiceStatuses.includes(status) ? status : 'Tagihan Penuh'
+}
 
 const docTotal = (document) => {
   const subtotal = (document.items || []).reduce((sum, item) => sum + Number(item.total ?? Number(item.quantity || 0) * Number(item.price || 0)), 0)
@@ -174,8 +178,8 @@ function newDocument(type, quotation = null, documents = [], receipts = [], base
   const date = today()
   const autoNumber = numberFor(type, date, documents, receipts, baselines)
   return {
-    id: createId(), type, number: autoNumber, autoNumber, date, dueDate: type === 'invoice' ? addDaysToDate(date, 14) : '',
-    status: 'Draft', paymentStatus: 'DP', recipientName: quotation?.recipientName || '', companyName: quotation?.companyName || '',
+    id: createId(), type, number: autoNumber, autoNumber, date, dueDate: '',
+    status: type === 'invoice' ? 'Tagihan Penuh' : 'Draft', paymentStatus: 'DP', recipientName: quotation?.recipientName || '', companyName: quotation?.companyName || '',
     phone: quotation?.phone || '', email: quotation?.email || '', address: quotation?.address || '',
     workConditions: quotation?.workConditions || (type === 'quotation' ? defaultWorkConditions : ''),
     paymentTerms: quotation?.paymentTerms || defaultPaymentTerms,
@@ -408,8 +412,8 @@ function App() {
     const invoices = documents.filter((row) => row.type === 'invoice')
     return {
       total: invoices.length,
-      unpaid: invoices.filter((row) => invoiceStatusValue(row.status) === 'Belum Lunas').length,
-      dp: invoices.filter((row) => invoiceStatusValue(row.status) === 'DP 50%').length,
+      unpaid: invoices.filter((row) => invoiceStatusValue(row.status) === 'Tagihan Penuh').length,
+      dp: invoices.filter((row) => invoiceStatusValue(row.status) === 'DP').length,
       paid: invoices.filter((row) => invoiceStatusValue(row.status) === 'Lunas').length,
     }
   }, [documents])
@@ -467,6 +471,18 @@ function App() {
     form.total = taxable
     form.vatAmount = Number(form.vatRate || 0) > 0 ? taxable * Number(form.vatRate || 0) / 100 : Number(form.vatAmount || form.pph || 0)
     form.grandTotal = taxable + form.vatAmount
+    if (form.type === 'invoice' && form.status !== 'Draft') {
+      if (invoiceStatusValue(form.status) === 'DP') {
+        form.status = 'DP'
+        form.billingStage = 'dp'
+        form.billingPercentage = 50
+      } else {
+        form.status = invoiceStatusValue(form.status)
+        form.billingStage = 'penuh'
+        form.billingPercentage = 0
+        form.downPaymentAmount = ''
+      }
+    }
     form.billingLabel = form.billingStage === 'dp' ? `DP ${form.billingPercentage}%` : 'Tagihan Penuh'
 
     const previous = documents.find((row) => row.id === form.id) || null
@@ -516,6 +532,16 @@ function App() {
       sendStatus: asDraft ? 'Draft' : receiptForm.sendStatus === 'Draft' ? 'Belum Dikirim' : receiptForm.sendStatus || 'Belum Dikirim',
     }
     await saveReceipt(saved)
+    if (invoice && !asDraft) {
+      const paidAfterSave = otherPaid + Number(saved.amount || 0)
+      const fullyPaid = paidAfterSave >= docTotal(invoice)
+      const paymentUpdates = fullyPaid
+        ? { status: 'Lunas', billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' }
+        : paidAfterSave > 0
+          ? { status: 'DP', billingStage: 'dp', billingPercentage: 50, downPaymentAmount: paidAfterSave }
+          : null
+      if (paymentUpdates) await saveDocument({ ...invoice, ...paymentUpdates })
+    }
     await refresh()
     setModal(null)
     setMessage(asDraft ? 'Kwitansi disimpan sebagai draft.' : 'Kwitansi tersimpan.')
@@ -523,16 +549,22 @@ function App() {
 
   const changeStatus = async (document, status) => {
     const currentDocument = documents.find(row => row.id === document.id) || document
-    if (currentDocument.status === status) return
+    const normalizedStatus = currentDocument.type === 'invoice' ? invoiceStatusValue(status) : status
+    if (currentDocument.status === normalizedStatus) return
 
     const previousStatus = currentDocument.status
-    setDocuments(rows => rows.map(row => row.id === document.id ? { ...row, status } : row))
+    const updates = currentDocument.type === 'invoice'
+      ? normalizedStatus === 'DP'
+        ? { status: normalizedStatus, billingStage: 'dp', billingPercentage: 50 }
+        : { status: normalizedStatus, billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' }
+      : { status: normalizedStatus }
+    setDocuments(rows => rows.map(row => row.id === document.id ? { ...row, ...updates } : row))
     setMessage('')
     try {
-      await saveDocument({ ...currentDocument, status })
+      await saveDocument({ ...currentDocument, ...updates })
       setMessage('Status berhasil diperbarui.')
     } catch (error) {
-      setDocuments(rows => rows.map(row => row.id === document.id ? { ...row, status: previousStatus } : row))
+      setDocuments(rows => rows.map(row => row.id === document.id ? { ...currentDocument, status: previousStatus } : row))
       try { await refresh() } catch { /* keep the optimistic rollback when refresh also fails */ }
       setMessage(`Status gagal disimpan: ${error.message}`)
     }
@@ -541,7 +573,7 @@ function App() {
   const editDocument = (document) => {
     const defaultPhone = '+62 895-3445-73716'
     const autoNumber = document.autoNumber || (!document.number ? numberFor(document.type, document.date, documents, receipts, company.numberBaselines) : '')
-    setDocForm({ ...document, number: document.number || autoNumber, autoNumber: document.autoNumber || autoNumber, dueDate: document.type === 'invoice' ? document.dueDate || addDaysToDate(document.date, 14) : document.dueDate || '', phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: (document.items || []).map((item) => ({ ...item })) })
+    setDocForm({ ...document, number: document.number || autoNumber, autoNumber: document.autoNumber || autoNumber, dueDate: document.dueDate === addDaysToDate(document.date, 14) ? '' : document.dueDate || '', phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: (document.items || []).map((item) => ({ ...item })) })
     setModal('document')
   }
 
@@ -711,8 +743,8 @@ function App() {
         </section>}
         {page === 'invoice' && <section className="quotation-stats" aria-label="Ringkasan invoice">
           <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="invoice"/></span><div><span>Total Invoice</span><strong>{invoiceStats.total}</strong></div><span className="stat-watermark"><Icon name="invoice"/></span></article>
-          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Belum Lunas</span><strong>{invoiceStats.unpaid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
-          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><Icon name="receipt"/></span><div><span>DP 50%</span><strong>{invoiceStats.dp}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Tagihan Penuh</span><strong>{invoiceStats.unpaid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
+          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><Icon name="receipt"/></span><div><span>DP</span><strong>{invoiceStats.dp}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
           <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Lunas</span><strong>{invoiceStats.paid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
         </section>}
         {page === 'receipt' && <section className="quotation-stats" aria-label="Ringkasan kwitansi">
@@ -723,7 +755,7 @@ function App() {
         </section>}
         <section className="table-card">
           <div className="table-toolbar quotation-toolbar"><div className="search-filter"><label htmlFor="document-search">Cari Dokumen</label><div className="search-box"><Icon name="search"/><input id="document-search" value={query} onChange={(event) => updateFilter('query', event.target.value)} placeholder="Cari nomor atau perusahaan..." aria-label="Cari dokumen"/></div></div><div className="status-filter"><label htmlFor="status-filter"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 8.5"/></svg><span>Status</span></label><select id="status-filter" value={statusFilter} onChange={(event) => updateFilter('status', event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Periode</span></label><select id="date-period" value={datePeriod} onChange={(event) => updateFilter('period', event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Tanggal</span></label><DateInput value={dateAnchor} onChange={(value) => updateFilter('date', value)} ariaLabel="Pilih tanggal acuan"/></div><button type="button" className="button apply-filter" onClick={() => { setAppliedFilters({ query, status: statusFilter, period: datePeriod, date: dateAnchor }); setCurrentPage(1) }}><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg>Terapkan</button></div>
-          <div className="table-scroll"><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
+          <div className="table-scroll"><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'invoice' && <th>No. Penawaran</th>}{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th><th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th>{page !== 'receipt' && <th>Status</th>}</>}<th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{visibleRecords.map((record) => {
               const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
               const pdfKey = `${page}:${record.id}`
@@ -740,7 +772,7 @@ function App() {
                 {page === 'quotation' ? <><td className="company-cell">{record.companyName || '-'}</td><td>{rowDate}</td><td className="status-cell"><select className={`status-select ${/disetujui|acc/i.test(record.status || '') ? 'status-approved' : record.status === 'Ditolak' ? 'status-rejected' : 'status-progress'}`} value={page === 'invoice' ? invoiceStatusValue(record.status) : record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
                   {['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}
                 </select></td><td className="amount-cell">{money(docTotal(record))}</td></> : <>
-                  <td>{rowDate}</td>{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
+                  <td>{rowDate}</td>{page === 'invoice' && <td>{record.quotationNumber || documents.find((row) => row.id === record.quotationId)?.number || '-'}</td>}{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
                   <td>{record.companyName || record.receivedFrom || '-'}</td><td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
                   {page !== 'receipt' && <td className="status-cell"><select className="status-select" value={page === 'invoice' ? invoiceStatusValue(record.status) : record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
                     {statusOptions.map((status) => <option key={status}>{status}</option>)}
@@ -786,7 +818,12 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
   const addItem = () => setDocument((state) => ({ ...state, items: [...state.items, { id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }] }))
   const removeItem = (id) => setDocument((state) => ({ ...state, items: state.items.filter((item) => item.id !== id) }))
   const total = docTotal(document)
-  const downPayment = Math.min(total, Math.max(0, Number(document.downPaymentAmount || 0)))
+  const receivedForInvoice = document.type === 'invoice'
+    ? receipts.filter((row) => row.invoiceId === document.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    : 0
+  const enteredDownPayment = Number(document.downPaymentAmount || 0)
+  const plannedDownPayment = document.billingStage === 'dp' ? Math.round(total * Number(document.billingPercentage || 50) / 100 * 100) / 100 : 0
+  const downPayment = Math.min(total, Math.max(0, receivedForInvoice || enteredDownPayment || plannedDownPayment))
   const remainingAfterDownPayment = Math.max(0, Math.round((total - downPayment) * 100) / 100)
   const readImage = (file, callback) => {
     if (!file) return
@@ -804,9 +841,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
           <Field label={document.type === 'quotation' ? 'No. Quotation' : 'No. Invoice'}><input value={document.number} onChange={(event) => set('number', event.target.value)} /></Field>
           <Field label="Tanggal" required><DateInput required ariaLabel="Tanggal dokumen" value={document.date} onChange={(nextDateValue) => setDocument((state) => {
             const nextDate = nextDateValue
-            const nextDueDate = state.type === 'invoice' && (!state.dueDate || state.dueDate === addDaysToDate(state.date, 14))
-              ? addDaysToDate(nextDate, 14)
-              : state.dueDate
+            const nextDueDate = state.type === 'invoice' && state.dueDate === addDaysToDate(state.date, 14) ? '' : state.dueDate
             if (state.autoNumber && (!state.number || state.number === state.autoNumber)) {
               const nextNumber = numberFor(state.type, nextDate, documents, receipts, company.numberBaselines)
               return { ...state, date: nextDate, dueDate: nextDueDate, number: state.number ? nextNumber : '', autoNumber: nextNumber }
@@ -820,7 +855,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
           <Field label="Email"><input type="email" value={document.email} onChange={(event) => set('email', event.target.value)} /></Field>
           <Field label="Alamat" className="full"><textarea rows="2" value={document.address} onChange={(event) => set('address', event.target.value)} /></Field>
           {document.type === 'invoice' && <Field label="Nomor penawaran"><input value={document.quotationNumber || ''} onChange={(event) => set('quotationNumber', event.target.value)} /></Field>}
-          {document.type === 'invoice' && <Field label="Jenis tagihan"><select value={document.billingStage || 'penuh'} onChange={(event) => set('billingStage', event.target.value)}><option value="penuh">Tagihan penuh</option><option value="dp">DP</option></select></Field>}
+          {document.type === 'invoice' && <Field label="Jenis tagihan"><select value={document.billingStage || 'penuh'} onChange={(event) => setDocument((state) => event.target.value === 'dp' ? { ...state, status: 'DP', billingStage: 'dp', billingPercentage: 50, downPaymentAmount: '' } : { ...state, status: 'Tagihan Penuh', billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' })}><option value="penuh">Tagihan penuh</option><option value="dp">DP 50%</option></select></Field>}
         </div></section>
 
         <section className="form-section"><div className="section-head"><div><h3>Barang / jasa</h3><p>Masukkan nama alat.</p></div></div>
@@ -839,7 +874,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
           <Field label="Diskon"><AmountInput value={document.discount || 0} onValueChange={(value) => set('discount', value)} /></Field>
           {document.type === 'quotation' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
           {document.type === 'invoice' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
-          {document.type === 'invoice' && document.billingStage === 'dp' && <><Field label="Nominal DP"><AmountInput value={document.downPaymentAmount || ''} onValueChange={(value) => set('downPaymentAmount', value)} /></Field><Field label="Sisa Tagihan"><output className="field-output total-output">{money(remainingAfterDownPayment)}</output></Field></>}
+          {document.type === 'invoice' && document.billingStage === 'dp' && <><Field label="Nominal DP (50%)"><output className="field-output">{money(downPayment)}</output></Field><Field label="Sisa Tagihan"><output className="field-output total-output">{money(remainingAfterDownPayment)}</output></Field></>}
         </div><div className="grand-total-panel"><span>Grand Total</span><strong>{money(total)}</strong></div></section>
 
         {document.type === 'quotation' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Kondisi perjanjian kerja" className="full"><textarea rows="5" value={document.workConditions || ''} onChange={(event) => set('workConditions', event.target.value)} /></Field><Field label="Cara pembayaran" className="full"><textarea rows="2" value={document.paymentTerms || ''} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
@@ -870,7 +905,7 @@ function Field({ label, required = false, className = '', children }) {
 function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft }) {
   const invoice = documents.find((row) => row.id === receipt.invoiceId)
   const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
-  const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments) : 0
+  const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments - Number(receipt.amount || 0)) : 0
   const changeInvoice = (id) => {
     const selected = documents.find((row) => row.id === id)
     setReceipt((state) => ({ ...state, invoiceId: id, receivedFrom: selected?.companyName || '', description: selected ? paymentPurpose(selected) : '' }))
