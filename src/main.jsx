@@ -323,10 +323,12 @@ function App() {
         const nextProfile = await loadProfile(nextUser.id)
         if (!active || loadId !== sessionLoadRef.current) return
         setWorkspace(nextProfile); setProfile(nextProfile)
+        // Authentication and role are ready; render the app shell while
+        // document queries continue in the background.
+        setReady(true)
         await refresh(nextProfile.role === 'director')
         if (!active || loadId !== sessionLoadRef.current) return
         setRecordsStatus('ready')
-        setReady(true)
       } catch (error) {
         if (active && loadId === sessionLoadRef.current) {
           setRecordsStatus('error')
@@ -434,7 +436,7 @@ function App() {
     setRecordsStatus('idle')
     setReady(true)
     sessionLoadRef.current += 1
-    void supabase.auth.signOut().then(({ error }) => {
+    void supabase.auth.signOut({ scope: 'local' }).then(({ error }) => {
       if (error) setMessage(error.message || 'Gagal keluar dari akun.')
     }).catch((error) => setMessage(error?.message || 'Gagal keluar dari akun.'))
   }
