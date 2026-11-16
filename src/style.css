@@ -505,7 +505,6 @@ html .app-shell .sidebar .brand span {
   .table-scroll .row-actions .icon-button.danger { color: #b3454c; background: #fff0f0; }
   .table-scroll .row-actions .icon-button.danger:hover { color: #fff; background: #b3454c; }
   .table-scroll .quotation-actions { gap: 7px; }
-  .table-scroll .quotation-actions .icon-button { width: 43px; height: 38px; border-radius: 20px; }
   .row-more { position: relative; }
   .row-more > summary { width: 43px; height: 38px; display: grid; place-items: center; border-radius: 20px; color: #123764; background: transparent; cursor: pointer; list-style: none; font-size: 21px; font-weight: 800; letter-spacing: 1px; }
   .row-more > summary::-webkit-details-marker { display: none; }
@@ -679,7 +678,7 @@ html .app-shell .sidebar .brand span {
   .table-scroll .row-actions .icon-button { width: 34px; height: 33px; border-radius: 9px; }
   .table-scroll .row-actions .icon-button .icon { width: 17px; height: 17px; }
   .table-scroll .quotation-actions { gap: 5px; }
-  .table-scroll .quotation-actions .icon-button, .row-more > summary { width: 38px; height: 34px; }
+  .row-more > summary { width: 38px; height: 34px; }
   .table-scroll .status-select { height: 32px; min-width: 125px; }
   .quotation-pagination { min-height: 64px; padding: 0 16px; }
   .pagination-controls { gap: 6px; }
@@ -732,7 +731,7 @@ html .app-shell .sidebar .brand span {
   .number-cell .row-document-icon .icon { width: 18px; height: 18px; }
   .table-scroll .row-actions .icon-button { width: 30px; height: 30px; border-radius: 8px; }
   .table-scroll .row-actions .icon-button .icon { width: 15px; height: 15px; }
-  .table-scroll .quotation-actions .icon-button, .row-more > summary { width: 33px; height: 31px; }
+  .row-more > summary { width: 33px; height: 31px; }
   .table-scroll .status-select { height: 29px; min-width: 112px; padding-left: 9px; }
   .quotation-stat { height: 84px; padding: 12px 14px; gap: 11px; }
   .quotation-stat .stat-icon { width: 47px; height: 47px; }
