@@ -760,9 +760,8 @@ function App() {
         </section>}
         <section className="table-card">
           <div className="table-toolbar quotation-toolbar"><div className="search-filter"><label htmlFor="document-search">Cari Dokumen</label><div className="search-box"><Icon name="search"/><input id="document-search" value={query} onChange={(event) => updateFilter('query', event.target.value)} placeholder="Cari nomor atau perusahaan..." aria-label="Cari dokumen"/></div></div><div className="status-filter"><label htmlFor="status-filter"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 8.5"/></svg><span>Status</span></label><select id="status-filter" value={statusFilter} onChange={(event) => updateFilter('status', event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Periode</span></label><select id="date-period" value={datePeriod} onChange={(event) => updateFilter('period', event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Tanggal</span></label><DateInput value={dateAnchor} onChange={(value) => updateFilter('date', value)} ariaLabel="Pilih tanggal acuan"/></div><button type="button" className="button apply-filter" onClick={() => { setAppliedFilters({ query, status: statusFilter, period: datePeriod, date: dateAnchor }); setCurrentPage(1) }}><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg>Terapkan</button></div>
-          <div className="table-scroll"><table><thead><tr><th>Nomor</th>{page === 'quotation' ? <><th>Perusahaan</th><th>Tanggal</th><th>Status</th><th>Total</th></> : <><th>Tanggal</th>{page === 'receipt' && <th>No. Invoice</th>}<th>Perusahaan</th>{page !== 'receipt' && <th>Status</th>}<th>{page === 'receipt' ? 'Jumlah' : 'Grand Total'}</th></>}<th className="actions-heading">Aksi</th></tr></thead>
+          <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th><th>Perusahaan</th><th>Status</th><th>Total</th><th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{visibleRecords.map((record) => {
-              const linkedInvoice = page === 'receipt' ? findReceiptInvoice(record) : null
               const pdfKey = `${page}:${record.id}`
               const isViewingPdf = viewingPdf === pdfKey
               const isDownloadingPdf = downloadingPdf === pdfKey
@@ -774,14 +773,14 @@ function App() {
                 else editDocument(record)
               }}>
                 <td className={'number-cell number-cell-' + page}><span className="row-document-icon"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></td>
-                {page === 'quotation' ? <><td className="company-cell">{record.companyName || '-'}</td><td>{rowDate}</td><td className="status-cell"><select className={`status-select ${/disetujui|acc/i.test(record.status || '') ? 'status-approved' : record.status === 'Ditolak' ? 'status-rejected' : 'status-progress'}`} value={page === 'invoice' ? invoiceStatusValue(record.status) : record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                {page === 'quotation' ? <><td>{rowDate}</td><td className="company-cell">{record.companyName || '-'}</td><td className="status-cell"><select className={`status-select ${/disetujui|acc/i.test(record.status || '') ? 'status-approved' : record.status === 'Ditolak' ? 'status-rejected' : 'status-progress'}`} value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
                   {['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}
                 </select></td><td className="amount-cell">{money(docTotal(record))}</td></> : <>
-                  <td>{rowDate}</td>{page === 'receipt' && <td>{record.invoiceNumber || linkedInvoice?.number || '-'}</td>}
+                  <td>{rowDate}</td>
                   <td>{record.companyName || record.receivedFrom || '-'}</td>
-                  {page !== 'receipt' && <td className="status-cell"><select className="status-select" value={page === 'invoice' ? invoiceStatusValue(record.status) : record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                  <td className="status-cell">{page === 'receipt' ? <span className="receipt-status-label">{record.sendStatus || 'Belum Dikirim'}</span> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
                     {statusOptions.map((status) => <option key={status}>{status}</option>)}
-                  </select></td>}
+                  </select>}</td>
                   <td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
                 </>}
                 <td><div className={`row-actions${page === 'quotation' ? ' quotation-actions' : ''}`}>
