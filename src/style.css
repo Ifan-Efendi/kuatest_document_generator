@@ -1002,6 +1002,15 @@ html .app-shell .sidebar .brand span {
   border-color: #1765b5;
   box-shadow: 0 0 0 3px rgba(23, 101, 181, .11);
 }
+.modal:not(.settings-modal) .payment-method-field textarea:disabled,
+.modal:not(.settings-modal) .payment-method-field select:disabled {
+  border-color: #d5dbe3;
+  color: #858e9b;
+  background: #e9edf2;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
 .modal:not(.settings-modal) .line-item {
   border-color: #dce8f7;
   border-radius: 10px;
