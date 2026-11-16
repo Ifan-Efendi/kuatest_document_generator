@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { loadProfile, supabase, supabaseConfigured } from './supabase'
 import { createRoot } from 'react-dom/client'
 import {
@@ -791,8 +792,10 @@ function App() {
     deletingRecords.current.add(recordKey)
     const setRows = storeName === 'receipts' ? setReceipts : setDocuments
     const kind = storeName === 'receipts' ? 'kwitansi' : (labels[record.type] || 'dokumen').toLowerCase()
-    setRows((rows) => rows.filter((row) => row.id !== record.id))
-    setMessage(`Menghapus ${kind}...`)
+    flushSync(() => {
+      setRows((rows) => rows.filter((row) => row.id !== record.id))
+      setMessage(`Menghapus ${kind}...`)
+    })
     try {
       await deleteRecord(storeName, record.id)
       setMessage(`${kind[0].toUpperCase()}${kind.slice(1)} ${record.number} dihapus.`)
