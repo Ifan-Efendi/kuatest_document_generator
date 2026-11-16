@@ -529,7 +529,7 @@ function App() {
     }
     const saved = {
       ...receiptForm,
-      method: receiptForm.method,
+      method: ['transfer', 'tunai'].includes(receiptForm.method) ? receiptForm.method : 'transfer',
       number,
       invoiceId: invoice?.id || receiptForm.invoiceId || '',
       invoiceNumber: invoice?.number || receiptForm.invoiceNumber || '',
@@ -1012,7 +1012,7 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
         })}/></Field>
         <Field label="Telah terima dari"><input value={receipt.receivedFrom} onChange={(event) => setReceipt((state) => ({ ...state, receivedFrom: event.target.value }))}/></Field>
         <Field label="Jumlah pembayaran" required><AmountInput required value={receipt.amount} onValueChange={(value) => setReceipt((state) => ({ ...state, amount: value, amountWords: amountInWords(value) }))}/></Field>
-        <Field label="Metode pembayaran"><select value={receipt.method} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option><option value="lainnya">Lainnya</option></select></Field>
+        <Field label="Metode pembayaran"><select value={['transfer', 'tunai'].includes(receipt.method) ? receipt.method : 'transfer'} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option></select></Field>
         <Field label="Status pengiriman kwitansi"><select value={receipt.sendStatus || 'Belum Dikirim'} onChange={e => setReceipt(v => ({...v,sendStatus:e.target.value}))}><option>Draft</option><option>Belum Dikirim</option><option>Terkirim</option></select></Field>
         <Field label="Untuk pembayaran" className="full"><input value={receipt.description} onChange={(event) => setReceipt((state) => ({ ...state, description: event.target.value }))}/></Field>
         <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
