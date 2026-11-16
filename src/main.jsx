@@ -248,7 +248,9 @@ function App() {
   const [receiptForm, setReceiptForm] = useState(null)
   const [settingsForm, setSettingsForm] = useState(defaultCompany)
   const [ready, setReady] = useState(false)
+  const [recordsStatus, setRecordsStatus] = useState('loading')
   const [message, setMessage] = useState('')
+  const sessionLoadRef = useRef(0)
   const savingReceiptRef = useRef(false)
   const [downloadingPdf, setDownloadingPdf] = useState(null)
   const savingDocumentIds = useRef(new Set())
@@ -304,17 +306,56 @@ function App() {
     let active = true
     const openSession = async (session) => {
       if (!active) return
-      setUser(session?.user || null)
-      if (!session?.user) { setProfile(null); setWorkspace(null); setReady(true); return }
+      const loadId = ++sessionLoadRef.current
+      const nextUser = session?.user || null
+      setUser(nextUser)
+      if (!nextUser) {
+        setProfile(null)
+        setWorkspace(null)
+        setDocuments([])
+        setReceipts([])
+        setRecordsStatus('idle')
+        setReady(true)
+        return
+      }
+      setRecordsStatus('loading')
       try {
-        const nextProfile = await loadProfile(session.user.id)
-        if (!active) return
+        const nextProfile = await loadProfile(nextUser.id)
+        if (!active || loadId !== sessionLoadRef.current) return
         setWorkspace(nextProfile); setProfile(nextProfile)
-        await refresh(nextProfile.role === 'director'); setReady(true)
-      } catch (error) { if (active) { setMessage(error.message); setReady(true) } }
+        await refresh(nextProfile.role === 'director')
+        if (!active || loadId !== sessionLoadRef.current) return
+        setRecordsStatus('ready')
+        setReady(true)
+      } catch (error) {
+        if (active && loadId === sessionLoadRef.current) {
+          setRecordsStatus('error')
+          setMessage(error.message)
+          setReady(true)
+        }
+      }
     }
-    supabase.auth.getSession().then(({ data }) => openSession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { queueMicrotask(() => openSession(session)) })
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        setRecordsStatus('error')
+        setMessage(error.message)
+        setReady(true)
+        return
+      }
+      return openSession(data.session)
+    }).catch((error) => {
+      if (active) {
+        setRecordsStatus('error')
+        setMessage(error.message || 'Sesi gagal diperiksa.')
+        setReady(true)
+      }
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        queueMicrotask(() => openSession(session))
+      }
+    })
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [])
 
@@ -381,7 +422,22 @@ function App() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setMessage('Email atau kata sandi tidak sesuai.')
   }
-  const signOut = async () => { setUserMenuOpen(false); await supabase.auth.signOut(); setReady(false); setPage('quotation') }
+  const signOut = () => {
+    setUserMenuOpen(false)
+    setPage('quotation')
+    setModal(null)
+    setUser(null)
+    setProfile(null)
+    setWorkspace(null)
+    setDocuments([])
+    setReceipts([])
+    setRecordsStatus('idle')
+    setReady(true)
+    sessionLoadRef.current += 1
+    void supabase.auth.signOut().then(({ error }) => {
+      if (error) setMessage(error.message || 'Gagal keluar dari akun.')
+    }).catch((error) => setMessage(error?.message || 'Gagal keluar dari akun.'))
+  }
 
   const items = page === 'receipt' ? receipts : documents.filter((row) => row.type === page)
   const statusOptions = page === 'quotation'
@@ -435,6 +491,7 @@ function App() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, pageCount)
   const visibleRecords = filtered.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
+  const displayStat = (value) => recordsStatus === 'ready' ? value : recordsStatus === 'loading' ? '…' : '—'
 
   if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
   if (!ready) return <main className="auth-screen"><section className="auth-card auth-loading" role="status" aria-live="polite"><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p><Icon name="loading"/>Memeriksa sesi...</p></section></main>
@@ -860,22 +917,22 @@ function App() {
 
 
         {page === 'quotation' && <section className="quotation-stats" aria-label="Ringkasan penawaran">
-          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="quotation"/></span><div><span>Total Penawaran</span><strong>{quotationStats.total}</strong></div><span className="stat-watermark"><Icon name="quotation"/></span></article>
-          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Dikirim</span><strong>{quotationStats.sent}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
-          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Disetujui</span><strong>{quotationStats.approved}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
-          <article className="quotation-stat stat-rejected"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></span><div><span>Ditolak</span><strong>{quotationStats.rejected}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></svg></article>
+          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="quotation"/></span><div><span>Total Penawaran</span><strong>{displayStat(quotationStats.total)}</strong></div><span className="stat-watermark"><Icon name="quotation"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Dikirim</span><strong>{displayStat(quotationStats.sent)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
+          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Disetujui</span><strong>{displayStat(quotationStats.approved)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
+          <article className="quotation-stat stat-rejected"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg></span><div><span>Ditolak</span><strong>{displayStat(quotationStats.rejected)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></svg></article>
         </section>}
         {page === 'invoice' && <section className="quotation-stats" aria-label="Ringkasan invoice">
-          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="invoice"/></span><div><span>Total Invoice</span><strong>{invoiceStats.total}</strong></div><span className="stat-watermark"><Icon name="invoice"/></span></article>
-          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Tagihan Penuh</span><strong>{invoiceStats.unpaid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
-          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><Icon name="receipt"/></span><div><span>DP</span><strong>{invoiceStats.dp}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
-          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Lunas</span><strong>{invoiceStats.paid}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
+          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="invoice"/></span><div><span>Total Invoice</span><strong>{displayStat(invoiceStats.total)}</strong></div><span className="stat-watermark"><Icon name="invoice"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><span>Tagihan Penuh</span><strong>{displayStat(invoiceStats.unpaid)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></article>
+          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><Icon name="receipt"/></span><div><span>DP</span><strong>{displayStat(invoiceStats.dp)}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
+          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Lunas</span><strong>{displayStat(invoiceStats.paid)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
         </section>}
         {page === 'receipt' && <section className="quotation-stats" aria-label="Ringkasan kwitansi">
-          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="receipt"/></span><div><span>Total Kwitansi</span><strong>{receiptStats.total}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
-          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></svg></span><div><span>Draft</span><strong>{receiptStats.draft}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25"/></svg></article>
-          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg></span><div><span>Belum Dikirim</span><strong>{receiptStats.unsent}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg></article>
-          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Terkirim</span><strong>{receiptStats.sent}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
+          <article className="quotation-stat stat-total"><span className="stat-icon"><Icon name="receipt"/></span><div><span>Total Kwitansi</span><strong>{displayStat(receiptStats.total)}</strong></div><span className="stat-watermark"><Icon name="receipt"/></span></article>
+          <article className="quotation-stat stat-progress"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25M9.5 12h6M9.5 15.5h6"/></svg></span><div><span>Draft</span><strong>{displayStat(receiptStats.draft)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7z"/><path d="M14 3.75v4.5h4.25"/></svg></article>
+          <article className="quotation-stat stat-invoice-dp"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg></span><div><span>Belum Dikirim</span><strong>{displayStat(receiptStats.unsent)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg></article>
+          <article className="quotation-stat stat-approved"><span className="stat-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><span>Terkirim</span><strong>{displayStat(receiptStats.sent)}</strong></div><svg className="stat-watermark" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></svg></article>
         </section>}
         <section className="table-card">
           <div className="table-toolbar quotation-toolbar"><div className="search-filter"><label htmlFor="document-search">Cari Dokumen</label><div className="search-box"><Icon name="search"/><input id="document-search" value={query} onChange={(event) => updateFilter('query', event.target.value)} placeholder="Cari nomor atau perusahaan..." aria-label="Cari dokumen"/></div></div><div className="status-filter"><label htmlFor="status-filter"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 8.5"/></svg><span>Status</span></label><select id="status-filter" value={statusFilter} onChange={(event) => updateFilter('status', event.target.value)} aria-label="Filter status"><option value="all">Semua status</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}</select></div><div className="period-filter"><label htmlFor="date-period"><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Periode</span></label><select id="date-period" value={datePeriod} onChange={(event) => updateFilter('period', event.target.value)} aria-label="Pilih periode tanggal"><option value="all">Semua tanggal</option><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div className="date-filter"><label><svg className="filter-mobile-icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg><span>Tanggal</span></label><DateInput value={dateAnchor} onChange={(value) => updateFilter('date', value)} ariaLabel="Pilih tanggal acuan"/></div><button type="button" className="button apply-filter" onClick={() => { setAppliedFilters({ query, status: statusFilter, period: datePeriod, date: dateAnchor }); setCurrentPage(1) }}><svg viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3v5.3l-3.6 1.8v-7.1z"/></svg>Terapkan</button></div>
@@ -921,7 +978,7 @@ function App() {
                 </div></td>
               </tr>
             })}
-            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{!ready ? 'Memuat data...' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
+            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{recordsStatus === 'loading' ? 'Memuat data...' : recordsStatus === 'error' ? 'Data gagal dimuat. Muat ulang halaman untuk mencoba lagi.' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
           <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data</span><div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
         </section>
