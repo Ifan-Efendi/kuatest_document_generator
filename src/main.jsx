@@ -769,12 +769,14 @@ function App() {
     const fileName = pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName)
     await downloadPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, fileName)
   }
+  const waitForUiPaint = () => new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)))
   const downloadRecordPdf = async (record) => {
     if (downloadingPdf || viewingPdf) return
     const key = `${page}:${record.id}`
     setDownloadingPdf(key)
     setMessage('Mengunduh PDF…')
     try {
+      await waitForUiPaint()
       if (page === 'receipt') await openReceiptPdf(record)
       else await openDocumentPdf(record)
       setMessage('PDF berhasil diunduh.')
@@ -798,6 +800,7 @@ function App() {
     setViewingPdf(key)
     setMessage('Menyiapkan PDF untuk ditampilkan…')
     try {
+      await waitForUiPaint()
       const url = page === 'receipt' ? await previewReceiptPdf(record) : await previewDocumentPdf(record)
       const tab = window.open(url, '_blank')
       if (tab) {
