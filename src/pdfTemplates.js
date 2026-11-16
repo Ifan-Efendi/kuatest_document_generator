@@ -14,7 +14,7 @@ const cssDocument = (css) => `<style>${css}
   .company-header { width: max-content; max-width: 100%; margin-left: auto; margin-right: auto; table-layout: auto; }
   .company-header .logo { transform: none; }
   .company-identity { transform: none; }
-  .company-identity .company-name { width: 100%; text-align: center; }
+  .company-identity .company-name { width: 100%; text-align: center; font-weight: 900; -webkit-text-stroke: 0.45pt currentColor; }
   .company-identity .company-description { display: block; width: 100%; font-size: 10.5pt; letter-spacing: -0.1pt; word-spacing: -0.5pt; white-space: nowrap; overflow-wrap: normal; text-align: center; }
   .invoice-page .items .summary td[colspan="4"] { border: 0; }
   .invoice-info .label, .invoice-info .right-label { width: 14%; }
