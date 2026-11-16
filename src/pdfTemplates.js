@@ -245,15 +245,61 @@ export function receiptPdf(receipt, invoice, company, fileName = '') {
   return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(receiptCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
 }
 
+async function compactPdfImage(value) {
+  if (typeof value !== 'string' || !value.startsWith('data:image/') || value.startsWith('data:image/svg+xml')) return value
+  let source
+  try { source = await createImageBitmap(await (await fetch(value)).blob()) } catch { return value }
+  const scale = Math.min(1, 1600 / Math.max(source.width, source.height))
+  if (scale === 1 && value.length < 160_000) { source.close(); return value }
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(source.width * scale))
+  canvas.height = Math.max(1, Math.round(source.height * scale))
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height)
+  source.close()
+  const compressed = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.82))
+  if (!compressed || compressed.size >= Math.ceil(value.length * 0.75)) return value
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => resolve(value)
+    reader.readAsDataURL(compressed)
+  })
+}
+
+async function compactPdfPayload(payload) {
+  const copy = JSON.parse(JSON.stringify(payload))
+  const imageCache = new Map()
+  const visit = async (value) => {
+    if (typeof value === 'string' && value.startsWith('data:image/')) {
+      if (!imageCache.has(value)) imageCache.set(value, compactPdfImage(value))
+      return imageCache.get(value)
+    }
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) value[index] = await visit(value[index])
+      return value
+    }
+    if (value && typeof value === 'object') {
+      for (const key of Object.keys(value)) value[key] = await visit(value[key])
+    }
+    return value
+  }
+  return visit(copy)
+}
+
 async function renderPdf(payload, fileName) {
   const { supabase } = await import('./supabase.js')
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) throw new Error('Silakan masuk kembali untuk membuat PDF.')
+  const preparedPayload = await compactPdfPayload({ ...payload, fileName })
+  const requestBody = JSON.stringify(preparedPayload)
+  if (new TextEncoder().encode(requestBody).byteLength > 3_500_000) {
+    throw new Error('Foto pada dokumen terlalu besar untuk dibuat PDF. Hapus atau kecilkan beberapa foto produk, lalu coba lagi.')
+  }
   const response = await fetch('/api/render-pdf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ ...payload, fileName }),
+    body: requestBody,
   })
   if (!response.ok || !response.headers.get('content-type')?.includes('application/pdf')) {
     const result = await response.json().catch(() => null)
