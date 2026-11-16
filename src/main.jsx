@@ -868,7 +868,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
       <div className="modal-head"><div><h2>{isExisting ? 'Ubah' : 'Buat'} {labels[document.type]}</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
       <div className="modal-body">
         <section className="form-section"><h3>Informasi dokumen</h3><div className="form-grid">
-          {document.type === 'invoice' && <Field label="Nomor penawaran"><select value={document.quotationId || ''} disabled={receivedForInvoice > 0} onChange={(event) => selectQuotation(event.target.value)}><option value="">Pilih nomor penawaran</option>{quotations.map((quotation) => <option key={quotation.id} value={quotation.id}>{quotation.number} · {quotation.companyName || 'Tanpa nama perusahaan'}</option>)}</select></Field>}
+          {document.type === 'invoice' && <Field label="Nomor penawaran" className="full"><select value={document.quotationId || ''} disabled={receivedForInvoice > 0} onChange={(event) => selectQuotation(event.target.value)}><option value="">Pilih nomor penawaran</option>{quotations.map((quotation) => <option key={quotation.id} value={quotation.id}>{quotation.number} · {quotation.companyName || 'Tanpa nama perusahaan'}</option>)}</select></Field>}
           <Field label={document.type === 'quotation' ? 'No. Quotation' : 'No. Invoice'}><input value={document.number} onChange={(event) => set('number', event.target.value)} /></Field>
           <Field label="Tanggal" required><DateInput required ariaLabel="Tanggal dokumen" value={document.date} onChange={(nextDateValue) => setDocument((state) => {
             const nextDate = nextDateValue
@@ -879,7 +879,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
             }
             return { ...state, date: nextDate, dueDate: nextDueDate }
           })} /></Field>
-          {document.type === 'invoice' && <Field label="Jatuh tempo"><DateInput ariaLabel="Tanggal jatuh tempo" value={document.dueDate || ''} onChange={(value) => set('dueDate', value)} /></Field>}
+          {document.type === 'invoice' && <Field label="Jatuh tempo" className="full"><DateInput ariaLabel="Tanggal jatuh tempo" value={document.dueDate || ''} onChange={(value) => set('dueDate', value)} /></Field>}
           <Field label="Kepada"><input value={document.recipientName} onChange={(event) => set('recipientName', event.target.value)} /></Field>
           <Field label="Perusahaan" required><input required value={document.companyName} onChange={(event) => set('companyName', event.target.value)} /></Field>
           <Field label="Telepon / Fax"><input value={document.phone} onChange={(event) => set('phone', event.target.value)} /></Field>
