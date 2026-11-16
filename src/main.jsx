@@ -516,7 +516,6 @@ function App() {
   const saveReceiptForm = async (event, asDraft = false) => {
     event?.preventDefault?.()
     const invoice = documents.find((row) => row.id === receiptForm.invoiceId)
-    const previousReceipt = receipts.find((row) => row.id === receiptForm.id) || null
     const number = receiptForm.number.trim() || receiptForm.autoNumber || numberFor('receipt', receiptForm.date, documents, receipts, company.numberBaselines)
     if (!asDraft && (!invoice || Number(receiptForm.amount) <= 0 || !number)) {
       setMessage('Pilih invoice dan isi nomor serta jumlah pembayaran.')
@@ -530,7 +529,7 @@ function App() {
     }
     const saved = {
       ...receiptForm,
-      method: profile.role === 'director' ? receiptForm.method : previousReceipt?.method || receiptForm.method,
+      method: receiptForm.method,
       number,
       invoiceId: invoice?.id || receiptForm.invoiceId || '',
       invoiceNumber: invoice?.number || receiptForm.invoiceNumber || '',
@@ -869,7 +868,7 @@ function App() {
     {!modal && <button type="button" className="floating-create-button" aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
 
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)} canEditPayment={profile.role === 'director'}/>}
-    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} canEditPayment={profile.role === 'director'}/>}
+    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)}/>}
     {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah detail perusahaan.</div>)}
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
@@ -989,7 +988,7 @@ function Field({ label, required = false, className = '', children }) {
   return <label className={`field ${className}`}><span>{label}{required && <b> *</b>}</span>{children}</label>
 }
 
-function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft, canEditPayment }) {
+function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft }) {
   const invoice = documents.find((row) => row.id === receipt.invoiceId)
   const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
   const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments - Number(receipt.amount || 0)) : 0
@@ -1013,7 +1012,7 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
         })}/></Field>
         <Field label="Telah terima dari"><input value={receipt.receivedFrom} onChange={(event) => setReceipt((state) => ({ ...state, receivedFrom: event.target.value }))}/></Field>
         <Field label="Jumlah pembayaran" required><AmountInput required value={receipt.amount} onValueChange={(value) => setReceipt((state) => ({ ...state, amount: value, amountWords: amountInWords(value) }))}/></Field>
-        <Field label="Metode pembayaran" className="payment-method-field"><select value={receipt.method} disabled={!canEditPayment} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option><option value="lainnya">Lainnya</option></select></Field>
+        <Field label="Metode pembayaran"><select value={receipt.method} onChange={(event) => setReceipt((state) => ({ ...state, method: event.target.value }))}><option value="transfer">Transfer bank</option><option value="tunai">Tunai</option><option value="lainnya">Lainnya</option></select></Field>
         <Field label="Status pengiriman kwitansi"><select value={receipt.sendStatus || 'Belum Dikirim'} onChange={e => setReceipt(v => ({...v,sendStatus:e.target.value}))}><option>Draft</option><option>Belum Dikirim</option><option>Terkirim</option></select></Field>
         <Field label="Untuk pembayaran" className="full"><input value={receipt.description} onChange={(event) => setReceipt((state) => ({ ...state, description: event.target.value }))}/></Field>
         <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
