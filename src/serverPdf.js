@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer-core'
+﻿import puppeteer from 'puppeteer-core'
 import { documentPdf, receiptPdf } from './pdfTemplates.js'
 
 export const maxPdfRequestBytes = 3_500_000
@@ -24,22 +24,23 @@ export async function renderPdfPayload(payload, launchOptions) {
 
   const browser = await puppeteer.launch({
     ...launchOptions,
+    args: await puppeteer.defaultArgs({ args: launchOptions.args || [], headless: launchOptions.headless || 'shell' }),
     defaultViewport: { width: 1280, height: 900, deviceScaleFactor: 1 },
   })
 
   try {
     const page = await browser.newPage()
-    page.setDefaultNavigationTimeout(45_000)
+    page.setDefaultNavigationTimeout(15_000)
     await page.setJavaScriptEnabled(false)
     await page.setRequestInterception(true)
     page.on('request', (outgoing) => {
       const url = outgoing.url()
-      if (url.startsWith('data:') || url === 'about:blank' || /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//.test(url)) outgoing.continue()
+      if (url.startsWith('data:') || url === 'about:blank') outgoing.continue()
       else outgoing.abort()
     })
 
-    await page.setContent(html, { waitUntil: 'load', timeout: 45_000 })
-    await page.evaluate(() => document.fonts.ready)
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    await page.waitForFunction(() => Array.from(document.images).every((image) => image.complete), { timeout: 5_000 }).catch(() => {})
     return await page.pdf({
       format: 'A4',
       margin: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },

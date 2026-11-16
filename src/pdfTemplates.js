@@ -1,4 +1,4 @@
-import { invoiceCss, quotationCss, receiptCss } from './pdfStyles.js'
+﻿import { invoiceCss, quotationCss, receiptCss } from './pdfStyles.js'
 
 const h = (value = '') => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character])
 const rupiah = (value) => Number(value || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -174,7 +174,7 @@ export function documentPdf(document, company, fileName = '') {
       <footer class="footer">Office : ${h(company.address)}</footer></section>${equipmentPages(document)}`
 
   const pdfTitle = fileName || `${document.number}.pdf`
-  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&display=swap" rel="stylesheet">${cssDocument(invoice ? invoiceCss : quotationCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(invoice ? invoiceCss : quotationCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
 }
 
 const words = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas']
@@ -242,7 +242,7 @@ export function receiptPdf(receipt, invoice, company, fileName = '') {
     <div class="signatures"><div class="signature"><div>${company.city ? `${h(company.city)}, ` : ''}${dateLong(receipt.date)}</div><div class="signature-art">${signImages(company, receipt)}</div><div class="signatory-name">${h(company.invoice_signatory_name || company.name)}</div><div>Finance</div></div></div>
     <footer class="footer">Office : ${h(company.address)}</footer></section>`
   const pdfTitle = fileName || `${receipt.number}.pdf`
-  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800&display=swap" rel="stylesheet">${cssDocument(receiptCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(receiptCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
 }
 
 async function renderPdf(payload, fileName) {
