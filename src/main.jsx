@@ -881,7 +881,7 @@ function App() {
     {!modal && <button type="button" className="floating-create-button" aria-label={'Buat ' + title} title={'Buat ' + title} onClick={() => page === 'receipt' ? startReceipt() : startDocument(page)}><Icon name="plus"/></button>}
 
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)} canEditPayment={profile.role === 'director'}/>}
-    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} isSaving={savingReceipt}/>}
+    {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} isSaving={savingReceipt} setMessage={setMessage}/>}
     {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah detail perusahaan.</div>)}
     {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
@@ -1001,7 +1001,7 @@ function Field({ label, required = false, className = '', children }) {
   return <label className={`field ${className}`}><span>{label}{required && <b> *</b>}</span>{children}</label>
 }
 
-function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft, isSaving }) {
+function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onClose, onSave, onSaveDraft, isSaving, setMessage }) {
   const invoice = documents.find((row) => row.id === receipt.invoiceId)
   const otherPayments = receipts.filter((row) => row.invoiceId === invoice?.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)
   const remaining = invoice ? Math.max(0, docTotal(invoice) - otherPayments - Number(receipt.amount || 0)) : 0
@@ -1010,7 +1010,10 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
     setReceipt((state) => ({ ...state, invoiceId: id, receivedFrom: selected?.companyName || '', description: selected ? paymentPurpose(selected) : '' }))
   }
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <form className="modal compact-modal" onSubmit={onSave}>
+    <form className="modal compact-modal" onSubmit={onSave} onInvalid={(event) => {
+      event.preventDefault()
+      setMessage('Lengkapi invoice, tanggal pembayaran, dan jumlah pembayaran sebelum menyimpan.')
+    }}>
       <div className="modal-head"><div><h2>Buat Kwitansi</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
       <div className="modal-body"><section className="form-section"><div className="form-grid">
         <Field label="Invoice" required className="full"><select required value={receipt.invoiceId} onChange={(event) => changeInvoice(event.target.value)}><option value="">Pilih invoice</option>{documents.filter((doc) => doc.type === 'invoice').map((doc) => <option key={doc.id} value={doc.id}>{doc.number} · {doc.companyName} · {money(Math.max(0, docTotal(doc) - receipts.filter((row) => row.invoiceId === doc.id && row.id !== receipt.id && row.sendStatus !== 'Draft').reduce((sum, row) => sum + Number(row.amount || 0), 0)))}</option>)}</select></Field>
@@ -1031,7 +1034,7 @@ function ReceiptModal({ receipt, setReceipt, documents, receipts, baselines, onC
         <Field label="Uang sejumlah (terbilang)" className="full"><input value={receipt.amountWords || ''} onChange={(event) => setReceipt((state) => ({ ...state, amountWords: event.target.value }))}/></Field>
         <div className="full outstanding"><span>Sisa invoice</span><strong>{money(remaining)}</strong></div>
       </div></section></div>
-      <div className="modal-foot"><button type="button" className="button subtle" disabled={isSaving} onClick={onClose}>Batal</button><button type="button" className="button subtle draft-save-button" disabled={isSaving} onClick={onSaveDraft}>Masukkan ke Draft</button><button type="submit" className="button primary" disabled={isSaving}>{isSaving ? 'Menyimpan...' : 'Simpan Kwitansi'}</button></div>
+      <div className="modal-foot"><button type="button" className="button subtle" disabled={isSaving} onClick={onClose}>Batal</button><button type="button" className="button subtle draft-save-button" disabled={isSaving} onClick={onSaveDraft}>Masukkan ke Draft</button><button type="submit" className={`button primary receipt-submit-button${isSaving ? ' is-loading' : ''}`} disabled={isSaving} aria-live="polite">{isSaving && <span className="receipt-save-spinner" aria-hidden="true"/>}{isSaving ? 'Menyimpan kwitansi...' : 'Simpan Kwitansi'}</button></div>
     </form>
   </div>
 }
