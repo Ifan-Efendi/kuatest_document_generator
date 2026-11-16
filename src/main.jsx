@@ -253,6 +253,7 @@ function App() {
   const savingDocumentIds = useRef(new Set())
   const [viewingPdf, setViewingPdf] = useState(null)
   const [pendingPreview, setPendingPreview] = useState(null)
+  const deletingRecords = useRef(new Set())
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef(null)
 
@@ -780,13 +781,29 @@ function App() {
   }
 
   const remove = async (record, storeName) => {
+    const recordKey = `${storeName}:${record.id}`
+    if (deletingRecords.current.has(recordKey)) return
     if (storeName === 'documents' && receipts.some((receipt) => receipt.invoiceId === record.id)) {
       setMessage('Invoice ini memiliki kuitansi terkait. Hapus kuitansinya dulu jika memang ingin menghapus invoice.')
       return
     }
     if (!window.confirm(`Hapus ${record.number}? Data lokal yang dihapus tidak bisa dikembalikan kecuali ada cadangan.`)) return
-    await deleteRecord(storeName, record.id)
-    await refresh()
+    deletingRecords.current.add(recordKey)
+    const setRows = storeName === 'receipts' ? setReceipts : setDocuments
+    const kind = storeName === 'receipts' ? 'kwitansi' : (labels[record.type] || 'dokumen').toLowerCase()
+    setRows((rows) => rows.filter((row) => row.id !== record.id))
+    setMessage(`Menghapus ${kind}...`)
+    try {
+      await deleteRecord(storeName, record.id)
+      setMessage(`${kind[0].toUpperCase()}${kind.slice(1)} ${record.number} dihapus.`)
+    } catch (error) {
+      setRows((rows) => rows.some((row) => row.id === record.id)
+        ? rows
+        : [...rows, record].sort((a, b) => String(b.date).localeCompare(String(a.date))))
+      setMessage(error?.message || `Gagal menghapus ${kind}.`)
+    } finally {
+      deletingRecords.current.delete(recordKey)
+    }
   }
 
   const showSettings = () => { setSettingsForm({ ...company }); setModal('settings') }
