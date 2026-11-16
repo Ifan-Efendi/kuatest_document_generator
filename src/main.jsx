@@ -593,6 +593,59 @@ function App() {
       ? { number: receipt.invoiceNumber || '', companyName: receipt.companyName || receipt.receivedFrom || '' }
       : null)
 
+  const changeReceiptStatus = async (receipt, sendStatus) => {
+    const previousReceipt = receipt
+    const previousStatus = receipt.sendStatus || 'Belum Dikirim'
+    if (previousStatus === sendStatus) return
+
+    const invoice = documents.find((row) => row.id === receipt.invoiceId)
+      || documents.find((row) => row.type === 'invoice' && receipt.invoiceNumber && row.number === receipt.invoiceNumber)
+    const otherPayments = receipts
+      .filter((row) => row.id !== receipt.id && row.sendStatus !== 'Draft' && (
+        (invoice?.id && row.invoiceId === invoice.id)
+        || (receipt.invoiceNumber && row.invoiceNumber === receipt.invoiceNumber)
+      ))
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    const paidTotal = otherPayments + (sendStatus === 'Draft' ? 0 : Number(receipt.amount || 0))
+    const invoiceTotal = invoice ? docTotal(invoice) : 0
+
+    if (invoice && sendStatus !== 'Draft' && paidTotal > invoiceTotal) {
+      setMessage(`Status tidak dapat diubah karena total pembayaran akan melebihi invoice ${money(invoiceTotal)}.`)
+      return
+    }
+
+    const updatedReceipt = { ...receipt, sendStatus }
+    const paymentUpdates = invoice
+      ? invoiceTotal > 0 && paidTotal >= invoiceTotal
+        ? { status: 'Lunas', billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' }
+        : paidTotal > 0
+          ? { status: 'DP', billingStage: 'dp', billingPercentage: 50, downPaymentAmount: paidTotal }
+          : { status: 'Tagihan Penuh', billingStage: 'penuh', billingPercentage: 0, downPaymentAmount: '' }
+      : null
+
+    setReceipts((rows) => rows.map((row) => row.id === receipt.id ? updatedReceipt : row))
+    if (invoice && paymentUpdates) {
+      setDocuments((rows) => rows.map((row) => row.id === invoice.id ? { ...row, ...paymentUpdates } : row))
+    }
+    setMessage('')
+
+    let receiptSaved = false
+    try {
+      await saveReceipt(updatedReceipt)
+      receiptSaved = true
+      if (invoice && paymentUpdates) await saveDocument({ ...invoice, ...paymentUpdates })
+      setMessage('Status kwitansi berhasil diperbarui.')
+    } catch (error) {
+      if (receiptSaved) {
+        try { await saveReceipt(previousReceipt) } catch { /* refresh below reconciles local state */ }
+      }
+      setReceipts((rows) => rows.map((row) => row.id === receipt.id ? previousReceipt : row))
+      if (invoice) setDocuments((rows) => rows.map((row) => row.id === invoice.id ? invoice : row))
+      try { await refresh() } catch { /* retain optimistic rollback if refresh fails */ }
+      setMessage(`Status kwitansi gagal disimpan: ${error.message}`)
+    }
+  }
+
   const openDocumentPdf = async (document) => {
     const pdfCompany = { ...company, logo: await embedAsset(company.logo) }
     const fileName = pdfFileName(document.type, document.number, document.companyName)
@@ -778,7 +831,9 @@ function App() {
                 </select></td><td className="amount-cell">{money(docTotal(record))}</td></> : <>
                   <td>{rowDate}</td>
                   <td>{record.companyName || record.receivedFrom || '-'}</td>
-                  <td className="status-cell">{page === 'receipt' ? <span className="receipt-status-label">{record.sendStatus || 'Belum Dikirim'}</span> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                  <td className="status-cell">{page === 'receipt' ? <select className="status-select" value={record.sendStatus || 'Belum Dikirim'} onChange={(event) => changeReceiptStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
+                    {['Draft', 'Belum Dikirim', 'Terkirim'].map((status) => <option key={status}>{status}</option>)}
+                  </select> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`}>
                     {statusOptions.map((status) => <option key={status}>{status}</option>)}
                   </select>}</td>
                   <td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
