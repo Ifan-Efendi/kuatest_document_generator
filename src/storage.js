@@ -1,12 +1,16 @@
 import { supabase } from './supabase'
+import { withDataRequestTimeout } from './requestTimeout'
 let workspace = null
 export const setWorkspace = (profile) => { workspace = profile }
 const requireWorkspace = () => { if (!workspace?.company_id) throw new Error('Sesi pengguna belum siap.'); return workspace }
 const fail = (error) => { if (error) throw new Error(error.message || 'Supabase gagal memproses permintaan.') }
 async function list(table) {
  const { company_id } = requireWorkspace()
- const { data, error } = await supabase.from(table).select('payload').eq('company_id', company_id)
- fail(error); return (data || []).map((row) => row.payload)
+ const label = table === 'documents' ? 'Data dokumen' : 'Data kwitansi'
+ return withDataRequestTimeout(async (signal) => {
+  const { data, error } = await supabase.from(table).select('payload').eq('company_id', company_id).abortSignal(signal)
+  fail(error); return (data || []).map((row) => row.payload)
+ }, label)
 }
 export const getDocuments = () => list('documents')
 export const getReceipts = () => list('receipts')
@@ -27,8 +31,10 @@ export async function deleteRecord(table, id) {
 }
 export async function getSettings() {
  const p = requireWorkspace()
- const { data, error } = await supabase.from('company_settings').select('payload').eq('company_id', p.company_id).maybeSingle()
- fail(error); return data?.payload || {}
+ return withDataRequestTimeout(async (signal) => {
+  const { data, error } = await supabase.from('company_settings').select('payload').eq('company_id', p.company_id).maybeSingle().abortSignal(signal)
+  fail(error); return data?.payload || {}
+ }, 'Pengaturan perusahaan')
 }
 export async function saveSettings(value) {
  const p = requireWorkspace()

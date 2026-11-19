@@ -120,11 +120,11 @@ function readWorkspaceCache(profile) {
     if (!value) return null
     const cache = JSON.parse(value)
     const age = Date.now() - Number(cache.savedAt)
-    if (cache.version !== 2 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || age > workspaceCacheTtl || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) {
+    if (cache.version !== 2 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) {
       sessionStorage.removeItem(key)
       return null
     }
-    return cache
+    return { ...cache, stale: age > workspaceCacheTtl }
   } catch {
     try { sessionStorage.removeItem(key) } catch { /* session storage can be unavailable */ }
     return null
@@ -349,9 +349,11 @@ function App() {
   const [ready, setReady] = useState(false)
   const [recordsStatus, setRecordsStatus] = useState('loading')
   const [recordsError, setRecordsError] = useState('')
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting')
   const [message, setMessage] = useState('')
   const sessionLoadRef = useRef(0)
   const refreshSequenceRef = useRef(0)
+  const settingsRefreshRef = useRef(0)
   const activeWorkspaceRef = useRef(null)
   const savingReceiptRef = useRef(false)
   const [downloadingPdf, setDownloadingPdf] = useState(null)
@@ -379,9 +381,14 @@ function App() {
   }, [recordsStatus, profile?.user_id, profile?.company_id, documents, receipts])
   const refresh = async (canPersistTagline = false) => {
     const refreshId = ++refreshSequenceRef.current
+    const settingsRefreshId = ++settingsRefreshRef.current
     const workspaceAtStart = activeWorkspaceRef.current
-    const [documentsResult, receiptsResult, settingsResult] = await Promise.allSettled([
-      getDocuments(), getReceipts(), getSettings(),
+    const settingsPromise = getSettings().then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    )
+    const [documentsResult, receiptsResult] = await Promise.allSettled([
+      getDocuments(), getReceipts(),
     ])
     if (refreshId !== refreshSequenceRef.current || !workspaceAtStart || activeWorkspaceRef.current?.user_id !== workspaceAtStart.user_id || activeWorkspaceRef.current?.company_id !== workspaceAtStart.company_id) return
 
@@ -398,39 +405,43 @@ function App() {
     if (dataErrors.length) throw new Error(dataErrors.join(' '))
     setRecordsError('')
 
-    if (settingsResult.status === 'rejected') {
-      setMessage(`Data dokumen sudah dimuat, tetapi pengaturan perusahaan gagal dimuat: ${settingsResult.reason?.message || 'Coba lagi.'}`)
-      return
-    }
-
-    const savedCompany = settingsResult.value
-    const savedBaselines = savedCompany.numberBaselines || {}
-    const numberBaselines = { ...defaultCompany.numberBaselines, ...savedBaselines }
-    numberBaselines[currentPeriod] = Object.fromEntries(
-      ['quotation', 'invoice', 'receipt'].map((type) => [
-        type,
-        Math.max(
-          Number(defaultCompany.numberBaselines[currentPeriod][type] || 0),
-          Number(savedBaselines[currentPeriod]?.[type] || 0),
-        ),
-      ]),
-    )
-    const mergedCompany = { ...defaultCompany, ...savedCompany, city: '', numberBaselines }
-    Object.entries(defaultCompany).forEach(([key, fallback]) => {
-      const value = mergedCompany[key]
-      if (typeof fallback === 'string' && fallback && (typeof value !== 'string' || !value.trim() || /^\[.*\]$/.test(value.trim()))) {
-        mergedCompany[key] = fallback
+    // Company settings update independently so a slow settings request cannot
+    // keep document rows, totals, and actions in the loading state.
+    void settingsPromise.then(async (settingsResult) => {
+      if (settingsRefreshId !== settingsRefreshRef.current || !workspaceAtStart || activeWorkspaceRef.current?.user_id !== workspaceAtStart.user_id || activeWorkspaceRef.current?.company_id !== workspaceAtStart.company_id) return
+      if (settingsResult.error) {
+        setMessage(`Data dokumen sudah dimuat, tetapi pengaturan perusahaan gagal dimuat: ${settingsResult.error.message || 'Coba lagi.'}`)
+        return
       }
+
+      const savedCompany = settingsResult.value || {}
+      const savedBaselines = savedCompany.numberBaselines || {}
+      const numberBaselines = { ...defaultCompany.numberBaselines, ...savedBaselines }
+      numberBaselines[currentPeriod] = Object.fromEntries(
+        ['quotation', 'invoice', 'receipt'].map((type) => [
+          type,
+          Math.max(
+            Number(defaultCompany.numberBaselines[currentPeriod][type] || 0),
+            Number(savedBaselines[currentPeriod]?.[type] || 0),
+          ),
+        ]),
+      )
+      const mergedCompany = { ...defaultCompany, ...savedCompany, city: '', numberBaselines }
+      Object.entries(defaultCompany).forEach(([key, fallback]) => {
+        const value = mergedCompany[key]
+        if (typeof fallback === 'string' && fallback && (typeof value !== 'string' || !value.trim() || /^\[.*\]$/.test(value.trim()))) {
+          mergedCompany[key] = fallback
+        }
+      })
+      if (previousCompanyDescriptions.includes(savedCompany.description)) {
+        mergedCompany.description = defaultCompany.description
+        if (canPersistTagline) {
+          try { await saveSettings(mergedCompany) } catch { /* retry on next director login */ }
+        }
+      }
+      setCompany(mergedCompany)
     })
-    if (previousCompanyDescriptions.includes(savedCompany.description)) {
-      mergedCompany.description = defaultCompany.description
-      if (canPersistTagline) {
-        try { await saveSettings(mergedCompany) } catch { /* retry on next director login */ }
-      }
-    }
-    setCompany(mergedCompany)
   }
-
   const retryDataLoad = async () => {
     if (!profile?.company_id || recordsStatus === 'loading') return
     setRecordsStatus(documents.length || receipts.length ? 'cached' : 'loading')
@@ -537,6 +548,7 @@ function App() {
     if (!supabaseConfigured || !user?.id || !ready || !companyId) return
 
     let active = true
+    setRealtimeStatus('connecting')
     const applyChange = (setRows, change) => {
       if (change.eventType === 'DELETE') {
         const deletedId = change.old?.id
@@ -567,8 +579,9 @@ function App() {
         event: '*', schema: 'public', table: 'company_settings', filter: `company_id=eq.${companyId}`,
       }, change => {
         if (!active) return
+        const settingsEventId = ++settingsRefreshRef.current
         const applySettings = (settings) => {
-          if (!active) return
+          if (!active || settingsEventId !== settingsRefreshRef.current) return
           const mergedSettings = {
             ...defaultCompany,
             ...(settings || {}),
@@ -582,10 +595,12 @@ function App() {
         else void getSettings().then(applySettings).catch((error) => console.error('Gagal menyinkronkan identitas perusahaan.', error))
       })
       .subscribe((status, error) => {
-        if (active && status === 'SUBSCRIBED') {
+        if (!active) return
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('connected')
           void refresh().catch((refreshError) => console.error('Gagal menyinkronkan data setelah Realtime tersambung.', refreshError))
-        }
-        if (active && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setRealtimeStatus('disconnected')
           console.error('Supabase Realtime gagal tersambung.', error)
         }
       })
@@ -1185,7 +1200,7 @@ function App() {
             })}
             {!filtered.length && <tr><td colSpan={6} className="empty-row">{recordsStatus === 'loading' ? 'Memuat data...' : ['error', 'cached-error'].includes(recordsStatus) ? <div className="records-load-error"><span>Data gagal dimuat{recordsError ? `: ${recordsError}` : '.'}</span><button type="button" className="button subtle" onClick={retryDataLoad}>Coba lagi</button></div> : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
-          <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data{recordsStatus === 'cached-error' ? <small className="cache-state"> · Data belum tersinkron</small> : null}</span><div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
+          <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data{recordsStatus === 'cached-error' ? <small className="cache-state"> · Data belum tersinkron</small> : null}</span>{realtimeStatus === 'disconnected' ? <small className="cache-state" role="status">Sinkronisasi realtime terputus; mencoba menyambungkan kembali</small> : null}<div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
         </section>
 
       </section>
