@@ -710,7 +710,7 @@ function App() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, pageCount)
   const visibleRecords = filtered.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
-  const actionsLocked = recordsStatus !== 'ready'
+  const actionsLocked = recordsStatus !== 'ready' && !(recordsStatus === 'cached-error' && (documents.length > 0 || receipts.length > 0))
   const displayStat = (value) => ['ready', 'cached', 'cached-error'].includes(recordsStatus) ? value : recordsStatus === 'loading' ? '…' : '—'
 
   if (!supabaseConfigured) return <main className="auth-screen"><section className="auth-card"><div className="auth-brand-mark"><img src={company.logo || '/assets/company-logo.png'} alt="Logo KUATEST"/></div><h1>PT. KUATEST MEGA TAMA</h1><p>Konfigurasi Supabase belum dipasang.</p><p>Tambahkan VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY di environment Vercel.</p></section></main>
