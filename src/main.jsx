@@ -691,7 +691,7 @@ function App() {
     unsent: receipts.filter((row) => (row.sendStatus || 'Belum Dikirim') === 'Belum Dikirim').length,
     sent: receipts.filter((row) => row.sendStatus === 'Terkirim').length,
   }), [receipts])
-  const pageSize = 5
+  const pageSize = 10
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, pageCount)
   const visibleRecords = filtered.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
