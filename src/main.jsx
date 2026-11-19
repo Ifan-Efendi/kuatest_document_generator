@@ -96,17 +96,16 @@ const pdfFileName = (type, number, companyName) => {
   return `${title} ${safeFilePart(sequence, 'TANPA-NOMOR')} - ${safeFilePart(companyName, 'TANPA-NAMA')}.pdf`
 }
 
-const workspaceCachePrefix = 'kuatest:workspace:v1:'
+const workspaceCachePrefix = 'kuatest:workspace:v2:'
 const workspaceCacheTtl = 5 * 60 * 1000
 const workspaceCacheKey = (profile) => `${workspaceCachePrefix}${encodeURIComponent(profile.user_id)}:${encodeURIComponent(profile.company_id)}`
-const cacheRecord = (record) => ({
-  id: record.id, type: record.type, number: record.number, date: record.date,
-  companyName: record.companyName || '', receivedFrom: record.receivedFrom || '',
-  status: record.status || '', sendStatus: record.sendStatus || '', amount: record.amount ?? 0,
-  items: (record.items || []).map((item) => ({ quantity: item.quantity, price: item.price, total: item.total })),
-  shippingFee: record.shippingFee || 0, discount: record.discount || 0,
-  vatRate: record.vatRate || 0, pphRate: record.pphRate || 0,
-  vatAmount: record.vatAmount || 0, pph: record.pph || 0,
+const cacheRecord = (record, includeImages = true) => ({
+  ...record,
+  items: (record.items || []).map((item) => {
+    if (includeImages) return { ...item }
+    const { image, ...itemWithoutImage } = item
+    return itemWithoutImage
+  }),
 })
 const validCachedRecords = (records, documents = false) => records.every((record) =>
   record && typeof record === 'object' && typeof record.id === 'string' && typeof record.number === 'string' &&
@@ -120,7 +119,7 @@ function readWorkspaceCache(profile) {
     if (!value) return null
     const cache = JSON.parse(value)
     const age = Date.now() - Number(cache.savedAt)
-    if (cache.version !== 1 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || age > workspaceCacheTtl || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) {
+    if (cache.version !== 2 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || age > workspaceCacheTtl || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) {
       sessionStorage.removeItem(key)
       return null
     }
@@ -133,11 +132,14 @@ function readWorkspaceCache(profile) {
 function writeWorkspaceCache(profile, documents, receipts) {
   if (!profile?.user_id || !profile?.company_id) return
   const key = workspaceCacheKey(profile)
+  const createValue = (includeImages) => JSON.stringify({
+    version: 2, userId: profile.user_id, companyId: profile.company_id, savedAt: Date.now(),
+    documents: documents.map((record) => cacheRecord(record, includeImages)),
+    receipts: receipts.map((record) => cacheRecord(record, includeImages)),
+  })
   try {
-    const value = JSON.stringify({
-      version: 1, userId: profile.user_id, companyId: profile.company_id, savedAt: Date.now(),
-      documents: documents.map(cacheRecord), receipts: receipts.map(cacheRecord),
-    })
+    let value = createValue(true)
+    if (value.length > 1_500_000) value = createValue(false)
     if (value.length > 1_500_000) {
       sessionStorage.removeItem(key)
       return
@@ -151,7 +153,7 @@ function clearWorkspaceCaches(keepKey = null) {
   try {
     for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
       const key = sessionStorage.key(index)
-      if (key?.startsWith(workspaceCachePrefix) && key !== keepKey) sessionStorage.removeItem(key)
+      if ((key?.startsWith(workspaceCachePrefix) || key?.startsWith('kuatest:workspace:v1:')) && key !== keepKey) sessionStorage.removeItem(key)
     }
   } catch { /* session storage can be unavailable */ }
 }
