@@ -3023,3 +3023,6 @@ html .app-shell .sidebar .brand span {
   .pdf-preview-modal { width: 100%; height: 100vh; height: 100dvh; border-radius: 0; }
   .pdf-preview-head { min-height: 50px; padding: 7px 12px; }
 }
+
+.records-load-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+.records-load-error .button { min-height: 32px; padding: 0 12px; font-size: 12px; }

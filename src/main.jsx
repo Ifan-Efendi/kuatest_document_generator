@@ -355,6 +355,7 @@ function App() {
   const [settingsForm, setSettingsForm] = useState(defaultCompany)
   const [ready, setReady] = useState(false)
   const [recordsStatus, setRecordsStatus] = useState('loading')
+  const [recordsError, setRecordsError] = useState('')
   const [message, setMessage] = useState('')
   const sessionLoadRef = useRef(0)
   const refreshSequenceRef = useRef(0)
@@ -386,10 +387,30 @@ function App() {
   const refresh = async (canPersistTagline = false) => {
     const refreshId = ++refreshSequenceRef.current
     const workspaceAtStart = activeWorkspaceRef.current
-    const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
+    const [documentsResult, receiptsResult, settingsResult] = await Promise.allSettled([
+      getDocuments(), getReceipts(), getSettings(),
+    ])
     if (refreshId !== refreshSequenceRef.current || !workspaceAtStart || activeWorkspaceRef.current?.user_id !== workspaceAtStart.user_id || activeWorkspaceRef.current?.company_id !== workspaceAtStart.company_id) return
-    setDocuments(savedDocuments.sort((a, b) => String(b.date).localeCompare(String(a.date))))
-    setReceipts(savedReceipts.sort((a, b) => String(b.date).localeCompare(String(a.date))))
+
+    if (documentsResult.status === 'fulfilled') {
+      setDocuments(documentsResult.value.sort((a, b) => String(b.date).localeCompare(String(a.date))))
+    }
+    if (receiptsResult.status === 'fulfilled') {
+      setReceipts(receiptsResult.value.sort((a, b) => String(b.date).localeCompare(String(a.date))))
+    }
+
+    const dataErrors = [documentsResult, receiptsResult]
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason?.message || 'Data dokumen gagal dimuat.')
+    if (dataErrors.length) throw new Error(dataErrors.join(' '))
+    setRecordsError('')
+
+    if (settingsResult.status === 'rejected') {
+      setMessage(`Data dokumen sudah dimuat, tetapi pengaturan perusahaan gagal dimuat: ${settingsResult.reason?.message || 'Coba lagi.'}`)
+      return
+    }
+
+    const savedCompany = settingsResult.value
     const savedBaselines = savedCompany.numberBaselines || {}
     const numberBaselines = { ...defaultCompany.numberBaselines, ...savedBaselines }
     numberBaselines[currentPeriod] = Object.fromEntries(
@@ -415,6 +436,21 @@ function App() {
       }
     }
     setCompany(mergedCompany)
+  }
+
+  const retryDataLoad = async () => {
+    if (!profile?.company_id || recordsStatus === 'loading') return
+    setRecordsStatus(documents.length || receipts.length ? 'cached' : 'loading')
+    setRecordsError('')
+    setMessage('')
+    try {
+      await refresh(profile.role === 'director')
+      setRecordsStatus('ready')
+    } catch (error) {
+      setRecordsError(error.message || 'Data gagal dimuat.')
+      setRecordsStatus(documents.length || receipts.length ? 'cached-error' : 'error')
+      setMessage(error.message || 'Data gagal dimuat. Coba lagi.')
+    }
   }
 
   useEffect(() => {
@@ -471,6 +507,7 @@ function App() {
       } catch (error) {
         if (active && loadId === sessionLoadRef.current) {
           setRecordsStatus(cachedWorkspace ? 'cached-error' : 'error')
+          setRecordsError(error.message || 'Data gagal dimuat.')
           setMessage(error.message)
           setReady(true)
         }
@@ -479,6 +516,7 @@ function App() {
     supabase.auth.getSession().then(({ data, error }) => {
       if (error) {
         setRecordsStatus('error')
+        setRecordsError(error.message || 'Data gagal dimuat.')
         setMessage(error.message)
         setReady(true)
         return
@@ -487,6 +525,7 @@ function App() {
     }).catch((error) => {
       if (active) {
         setRecordsStatus('error')
+        setRecordsError(error.message || 'Sesi gagal diperiksa.')
         setMessage(error.message || 'Sesi gagal diperiksa.')
         setReady(true)
       }
@@ -1150,7 +1189,7 @@ function App() {
                 </div></td>
               </tr>
             })}
-            {!filtered.length && <tr><td colSpan={page === 'receipt' ? 6 : 6} className="empty-row">{recordsStatus === 'loading' ? 'Memuat data...' : ['error', 'cached-error'].includes(recordsStatus) ? 'Data gagal dimuat. Muat ulang halaman untuk mencoba lagi.' : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
+            {!filtered.length && <tr><td colSpan={6} className="empty-row">{recordsStatus === 'loading' ? 'Memuat data...' : ['error', 'cached-error'].includes(recordsStatus) ? <div className="records-load-error"><span>Data gagal dimuat{recordsError ? `: ${recordsError}` : '.'}</span><button type="button" className="button subtle" onClick={retryDataLoad}>Coba lagi</button></div> : (query || datePeriod !== 'all' || statusFilter !== 'all') ? 'Tidak ada dokumen yang cocok dengan pencarian, status, atau periode.' : 'Belum ada dokumen. Buat dokumen pertama untuk memulai.'}</td></tr>}
             </tbody></table></div>
           <div className="quotation-pagination"><span>Menampilkan {filtered.length ? (safeCurrentPage - 1) * pageSize + 1 : 0}–{Math.min(safeCurrentPage * pageSize, filtered.length)} dari {filtered.length} data{recordsStatus === 'cached-error' ? <small className="cache-state"> · Data belum tersinkron</small> : null}</span><div className="pagination-controls"><button type="button" aria-label="Halaman sebelumnya" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage((pageNumber) => Math.max(1, pageNumber - 1))}>&lsaquo;</button>{Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => pageCount <= 5 || number === 1 || number === pageCount || Math.abs(number - safeCurrentPage) <= 1).map((number, index, pages) => <React.Fragment key={number}>{index > 0 && number - pages[index - 1] > 1 && <span className="pagination-ellipsis">&hellip;</span>}<button type="button" className={safeCurrentPage === number ? 'active' : ''} aria-current={safeCurrentPage === number ? 'page' : undefined} onClick={() => setCurrentPage(number)}>{number}</button></React.Fragment>)}<button type="button" aria-label="Halaman berikutnya" disabled={safeCurrentPage >= pageCount} onClick={() => setCurrentPage((pageNumber) => Math.min(pageCount, pageNumber + 1))}>&rsaquo;</button></div></div>
         </section>
