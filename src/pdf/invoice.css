@@ -1,4 +1,4 @@
-@page { size: A4; margin: 15mm 0 20mm; }
+@page { size: A4; margin: 15mm 0 0; }
         * { box-sizing: border-box; }
         body { margin: 0; color: #111; font: 10.5pt Arial, Helvetica, sans-serif; word-spacing: -0.2pt; }
         .invoice-page { width: 180mm; min-height: 262mm; margin: 0 15mm; padding-bottom: 19mm; display: flex; flex-direction: column; }
