@@ -1,7 +1,7 @@
-@page { size: A4; margin: 15mm 0 0; }
+@page { size: A4; margin: 15mm 0 20mm; }
         * { box-sizing: border-box; }
         body { margin: 0; color: #111; font: 10.5pt Arial, Helvetica, sans-serif; word-spacing: -0.2pt; }
-        .document-page { width: 180mm; min-height: 267mm; margin: 0 15mm; padding-bottom: 18mm; display: flex; flex-direction: column; }
+        .document-page { width: 180mm; min-height: 262mm; margin: 0 15mm; padding-bottom: 18mm; display: flex; flex-direction: column; }
         .company-header { width: 100%; height: 30mm; border-collapse: collapse; table-layout: fixed; }
         .company-header td { padding: 0; vertical-align: middle; }
         .company-logo { width: 34mm; padding-right: 0 !important; text-align: left; }
