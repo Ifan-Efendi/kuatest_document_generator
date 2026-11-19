@@ -168,6 +168,51 @@ async function embedAsset(value) {
   })
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('Foto gagal dibaca.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function compressProductImage(file) {
+  let source
+  let releaseSource = () => {}
+  try {
+    source = await createImageBitmap(file)
+    releaseSource = () => source.close()
+  } catch {
+    const objectUrl = URL.createObjectURL(file)
+    try {
+      source = await new Promise((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => resolve(image)
+        image.onerror = reject
+        image.src = objectUrl
+      })
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+
+  const maxDimension = 1280
+  const scale = Math.min(1, maxDimension / Math.max(source.width, source.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(source.width * scale))
+  canvas.height = Math.max(1, Math.round(source.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) {
+    releaseSource()
+    return blobToDataUrl(file)
+  }
+  context.drawImage(source, 0, 0, canvas.width, canvas.height)
+  releaseSource()
+
+  const compressed = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.72))
+  return blobToDataUrl(compressed && compressed.size < file.size ? compressed : file)
+}
 function numberFor(type, date, documents, receipts, baselines = {}) {
   const [year, month] = todayAt(date).split('-')
   const code = codes[type]
@@ -314,6 +359,7 @@ function App() {
   const savingReceiptRef = useRef(false)
   const [downloadingPdf, setDownloadingPdf] = useState(null)
   const savingDocumentIds = useRef(new Set())
+  const [savingDocuments, setSavingDocuments] = useState(() => new Set())
   const [viewingPdf, setViewingPdf] = useState(null)
   const [pendingPreview, setPendingPreview] = useState(null)
   const deletingRecords = useRef(new Set())
@@ -607,7 +653,10 @@ function App() {
 
   const saveDoc = async (event, asDraft = false) => {
     event?.preventDefault?.()
-    if (savingDocumentIds.current.has(docForm.id)) return
+    if (savingDocumentIds.current.has(docForm.id)) {
+      setMessage('Dokumen masih disimpan. Tunggu sebentar lalu coba lagi.')
+      return
+    }
 
     const previous = documents.find((row) => row.id === docForm.id) || null
     const form = {
@@ -645,6 +694,7 @@ function App() {
     form.billingLabel = form.billingStage === 'dp' ? `DP ${form.billingPercentage}%` : 'Tagihan Penuh'
 
     savingDocumentIds.current.add(form.id)
+    setSavingDocuments((ids) => new Set(ids).add(form.id))
     setDocuments((rows) => {
       const exists = rows.some((row) => row.id === form.id)
       const next = exists ? rows.map((row) => row.id === form.id ? form : row) : [...rows, form]
@@ -663,7 +713,14 @@ function App() {
         setDocForm(form)
         setModal('document')
       }
-    }).finally(() => savingDocumentIds.current.delete(form.id))
+    }).finally(() => {
+      savingDocumentIds.current.delete(form.id)
+      setSavingDocuments((ids) => {
+        const next = new Set(ids)
+        next.delete(form.id)
+        return next
+      })
+    })
   }
   const saveReceiptForm = async (event, asDraft = false) => {
     event?.preventDefault?.()
@@ -1034,24 +1091,25 @@ function App() {
           <div className="table-scroll"><table><thead><tr><th>Nomor</th><th>Tanggal</th><th>Perusahaan</th><th>Status</th><th>Total</th><th className="actions-heading">Aksi</th></tr></thead>
             <tbody>{visibleRecords.map((record) => {
               const pdfKey = `${page}:${record.id}`
+              const isSavingDocument = savingDocuments.has(record.id)
               const isViewingPdf = viewingPdf === pdfKey
               const isDownloadingPdf = downloadingPdf === pdfKey
               const isPdfBusy = Boolean(viewingPdf || downloadingPdf)
               const rowDate = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${record.date}T12:00:00Z`))
               return <tr key={record.id} className="document-row" onClick={(event) => {
-                if (actionsLocked || event.target.closest('.status-cell, td:last-child, button, select, a, input, textarea')) return
+                if (actionsLocked || isSavingDocument || event.target.closest('.status-cell, td:last-child, button, select, a, input, textarea')) return
                 if (page === 'receipt') editReceipt(record)
                 else editDocument(record)
               }}>
                 <td className={'number-cell number-cell-' + page}><span className="row-document-icon"><Icon name={page === 'receipt' ? 'receipt' : page}/></span><span>{record.number}</span></td>
-                {page === 'quotation' ? <><td>{rowDate}</td><td className="company-cell">{record.companyName || '-'}</td><td className="status-cell"><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked}>
+                {page === 'quotation' ? <><td>{rowDate}</td><td className="company-cell">{record.companyName || '-'}</td><td className="status-cell"><select className="status-select" value={record.status || 'Draft'} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked || isSavingDocument}>
                   {['Draft', 'Terkirim', 'Sudah Disetujui', 'Ditolak'].map((status) => <option key={status} value={status}>{status === 'Sudah Disetujui' ? 'Disetujui' : status}</option>)}
                 </select></td><td className="amount-cell">{money(docTotal(record))}</td></> : <>
                   <td>{rowDate}</td>
                   <td>{record.companyName || record.receivedFrom || '-'}</td>
-                  <td className="status-cell">{page === 'receipt' ? <select className="status-select" value={record.sendStatus || 'Belum Dikirim'} onChange={(event) => changeReceiptStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked}>
+                  <td className="status-cell">{page === 'receipt' ? <select className="status-select" value={record.sendStatus || 'Belum Dikirim'} onChange={(event) => changeReceiptStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked || isSavingDocument}>
                     {['Draft', 'Belum Dikirim', 'Terkirim'].map((status) => <option key={status}>{status}</option>)}
-                  </select> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked}>
+                  </select> : <select className="status-select" value={invoiceStatusValue(record.status)} onChange={(event) => changeStatus(record, event.target.value)} aria-label={`Status ${record.number}`} disabled={actionsLocked || isSavingDocument}>
                     {statusOptions.map((status) => <option key={status}>{status}</option>)}
                   </select>}</td>
                   <td className="amount-cell">{money(page === 'receipt' ? record.amount : docTotal(record))}</td>
@@ -1060,13 +1118,13 @@ function App() {
                   {page === 'quotation' ? <>
                     <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title="Lihat PDF" aria-label="Lihat PDF" disabled={isPdfBusy || actionsLocked} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
                     <button type="button" className={isDownloadingPdf ? "icon-button is-loading" : "icon-button"} title={isDownloadingPdf ? "Mengunduh PDF..." : "Unduh PDF"} aria-label="Unduh PDF" disabled={isPdfBusy || actionsLocked} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
-                    <button type="button" className="icon-button" title="Buat invoice" aria-label="Buat invoice" disabled={actionsLocked} onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>
-                    <button type="button" className="icon-button" title="Ubah" aria-label="Ubah penawaran" disabled={actionsLocked} onClick={() => editDocument(record)}><Icon name="edit"/></button>
+                    <button type="button" className="icon-button" title="Buat invoice" aria-label="Buat invoice" disabled={actionsLocked || isSavingDocument} onClick={() => createInvoiceFrom(record)}><Icon name="arrow"/></button>
+                    <button type="button" className="icon-button" title={isSavingDocument ? "Menyimpan..." : "Ubah"} aria-label="Ubah penawaran" disabled={actionsLocked || isSavingDocument} onClick={() => editDocument(record)}><Icon name="edit"/></button>
                     {profile.role === 'director' && <button type="button" className="icon-button danger" title="Hapus penawaran" aria-label="Hapus penawaran" disabled={actionsLocked} onClick={() => remove(record, 'documents')}><Icon name="trash"/></button>}
                     </> : <>
                     <button className={`icon-button${isViewingPdf ? ' is-loading' : ''}`} title={isViewingPdf ? 'Menyiapkan PDF...' : 'Lihat PDF'} aria-label="Lihat PDF" disabled={isPdfBusy || actionsLocked} onClick={() => viewRecordPdf(record)}><Icon name={isViewingPdf ? 'loading' : 'eye'}/></button>
                     <button className={`icon-button${isDownloadingPdf ? ' is-loading' : ''}`} title={isDownloadingPdf ? 'Mengunduh PDF...' : 'Unduh PDF'} aria-label="Unduh PDF" disabled={isPdfBusy || actionsLocked} onClick={() => downloadRecordPdf(record)}><Icon name={isDownloadingPdf ? 'loading' : 'download'}/></button>
-                    <button className="icon-button" title="Ubah" disabled={actionsLocked} onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
+                    <button className="icon-button" title={isSavingDocument ? "Menyimpan..." : "Ubah"} disabled={actionsLocked || isSavingDocument} onClick={() => page === 'receipt' ? editReceipt(record) : editDocument(record)}><Icon name="edit"/></button>
                     {page === 'invoice' && <button className="icon-button" title="Buat kwitansi dari invoice" disabled={actionsLocked} onClick={() => startReceipt(record)}><Icon name="receiptAdd"/></button>}
                     {profile.role === 'director' && <button className="icon-button danger" title="Hapus" disabled={actionsLocked} onClick={() => remove(record, page === 'receipt' ? 'receipts' : 'documents')}><Icon name="trash"/></button>}
                   </>}
@@ -1092,6 +1150,7 @@ function App() {
 
 function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, company, documents, receipts, isExisting, canEditPayment }) {
   const set = (key, value) => setDocument((state) => ({ ...state, [key]: value }))
+  const [pendingImageCount, setPendingImageCount] = useState(0)
   const quotations = documents.filter((row) => row.type === 'quotation').sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
   const selectQuotation = (quotationId) => {
     const quotation = quotations.find((row) => row.id === quotationId)
@@ -1127,14 +1186,15 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
   const plannedDownPayment = document.billingStage === 'dp' ? Math.round(total * Number(document.billingPercentage || 50) / 100 * 100) / 100 : 0
   const downPayment = Math.min(total, Math.max(0, receivedForInvoice || enteredDownPayment || plannedDownPayment))
   const remainingAfterDownPayment = Math.max(0, Math.round((total - downPayment) * 100) / 100)
-  const readImage = (file, callback) => {
+  const readImage = (file, itemId) => {
     if (!file) return
     if (file.size > 3 * 1024 * 1024) return window.alert('Ukuran gambar maksimal 3 MB.')
-    const reader = new FileReader()
-    reader.onload = () => callback(reader.result)
-    reader.readAsDataURL(file)
+    setPendingImageCount((count) => count + 1)
+    void compressProductImage(file)
+      .then((image) => updateItem(itemId, 'image', image))
+      .catch(() => window.alert('Foto gagal diproses. Silakan coba gambar lain.'))
+      .finally(() => setPendingImageCount((count) => Math.max(0, count - 1)))
   }
-
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <form className="modal document-modal" onSubmit={onSave}>
       <div className="modal-head"><div><h2>{isExisting ? 'Ubah' : 'Buat'} {labels[document.type]}</h2></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close"/></button></div>
@@ -1164,7 +1224,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
           <div className="line-items">{document.items.map((item, index) => <div className="line-item" key={item.id}>
             <div className="line-item-heading"><span className="line-index">{String(index + 1).padStart(2, '0')}</span><button className="icon-button danger remove-line" type="button" title="Hapus baris" disabled={document.items.length === 1} onClick={() => removeItem(item.id)}><Icon name="trash"/></button></div>
             <div className="line-fields"><Field label="Nama alat"><input value={item.name} onChange={(event) => updateItem(item.id, 'name', event.target.value)} /></Field><Field label="Spesifikasi"><textarea rows="1" value={item.specification} onChange={(event) => updateItem(item.id, 'specification', event.target.value)} /></Field><Field label="Jumlah"><input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} /></Field><Field label="Satuan"><input value={item.unit} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} /></Field><Field label="Harga"><AmountInput value={item.price} onValueChange={(value) => updateItem(item.id, 'price', value)} /></Field>
-              <Field label="Upload foto produk" className="full"><div className="upload-row"><input type="file" accept="image/*" onChange={(event) => readImage(event.target.files[0], (image) => updateItem(item.id, 'image', image))}/>{item.image && <button type="button" className="text-button danger-text" onClick={() => updateItem(item.id, 'image', '')}>Hapus gambar</button>}</div></Field>
+              <Field label="Upload foto produk" className="full"><div className="upload-row"><input type="file" accept="image/*" onChange={(event) => readImage(event.target.files[0], item.id)}/>{pendingImageCount > 0 && <small role="status">Memproses foto...</small>}{item.image && <button type="button" className="text-button danger-text" onClick={() => updateItem(item.id, 'image', '')}>Hapus gambar</button>}</div></Field>
             </div>
           </div>)}</div>
           <div className="line-items-footer"><button className="button small subtle" type="button" onClick={addItem}><Icon name="plus"/>Tambah baris</button></div>
@@ -1182,7 +1242,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
         {document.type === 'quotation' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Kondisi perjanjian kerja" className="full"><textarea rows="5" value={document.workConditions || ''} onChange={(event) => set('workConditions', event.target.value)} /></Field><Field label="Cara pembayaran" className="full payment-method-field"><textarea rows="2" value={document.paymentTerms || ''} disabled={!canEditPayment} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
         {document.type === 'invoice' && <section className="form-section"><h3>Syarat dan keterangan</h3><div className="form-grid"><Field label="Cara pembayaran" className="full payment-method-field"><textarea rows="2" value={document.paymentTerms || ''} disabled={!canEditPayment} onChange={(event) => set('paymentTerms', event.target.value)} /></Field></div></section>}
       </div>
-      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button>{['quotation', 'invoice'].includes(document.type) && <button type="button" className="button subtle draft-save-button" onClick={onSaveDraft}>Masukkan ke Draft</button>}<button type="submit" className="button primary">Simpan {labels[document.type]}</button></div>
+      <div className="modal-foot"><button type="button" className="button subtle" onClick={onClose}>Batal</button>{['quotation', 'invoice'].includes(document.type) && <button type="button" className="button subtle draft-save-button" disabled={pendingImageCount > 0} onClick={onSaveDraft}>Masukkan ke Draft</button>}<button type="submit" className="button primary" disabled={pendingImageCount > 0}>Simpan {labels[document.type]}</button></div>
     </form>
   </div>
 }
