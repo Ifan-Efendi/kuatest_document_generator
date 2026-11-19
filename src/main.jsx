@@ -362,7 +362,7 @@ function App() {
   const savingDocumentIds = useRef(new Set())
   const [savingDocuments, setSavingDocuments] = useState(() => new Set())
   const [viewingPdf, setViewingPdf] = useState(null)
-  const [pendingPreview, setPendingPreview] = useState(null)
+  const [pdfPreview, setPdfPreview] = useState(null)
   const deletingRecords = useRef(new Set())
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef(null)
@@ -969,24 +969,9 @@ function App() {
   const viewRecordPdf = async (record) => {
     if (downloadingPdf || viewingPdf) return
     const key = `${page}:${record.id}`
-    if (pendingPreview?.key === key) {
-      openPendingPdf()
-      return
-    }
-    if (pendingPreview) {
-      URL.revokeObjectURL(pendingPreview.url)
-      setPendingPreview(null)
-    }
-
-    // Open the tab directly in the click gesture. Mobile browsers may block
-    // window.open if it happens only after the PDF request has completed.
-    const previewTab = window.open('about:blank', '_blank')
-    if (previewTab) {
-      previewTab.opener = null
-      try {
-        previewTab.document.title = 'Menyiapkan PDF...'
-        previewTab.document.body.innerText = 'Menyiapkan PDF untuk ditampilkan...'
-      } catch { /* The browser may restrict access to the new tab document. */ }
+    if (pdfPreview) {
+      URL.revokeObjectURL(pdfPreview.url)
+      setPdfPreview(null)
     }
 
     setViewingPdf(key)
@@ -994,21 +979,15 @@ function App() {
     try {
       await waitForUiPaint()
       const url = page === 'receipt' ? await previewReceiptPdf(record) : await previewDocumentPdf(record)
-      if (previewTab && !previewTab.closed) {
-        previewTab.location.replace(url)
-        window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000)
-        setMessage('PDF siap ditampilkan.')
-      } else {
-        setPendingPreview({ key, url })
-        setMessage('PDF siap. Klik Buka PDF untuk menampilkannya.')
-      }
+      setPdfPreview({ key, url })
+      setMessage('')
     } catch (error) {
-      if (previewTab && !previewTab.closed) previewTab.close()
       setMessage(error.message || 'PDF gagal dibuka. Coba lagi.')
     } finally {
       setViewingPdf(null)
     }
   }
+
   const previewReceiptPdf = async (receipt) => {
     const invoice = findReceiptInvoice(receipt)
     if (!invoice) throw new Error('Invoice untuk kuitansi ini tidak ditemukan di penyimpanan lokal.')
@@ -1016,17 +995,10 @@ function App() {
     return previewPdf({ kind: 'receipt', receipt, invoice, company: pdfCompany }, pdfFileName('receipt', receipt.number, receipt.receivedFrom || invoice.companyName))
   }
 
-  const openPendingPdf = () => {
-    if (!pendingPreview) return
-    const tab = window.open(pendingPreview.url, '_blank')
-    if (!tab) {
-      setMessage('Pop-up diblokir. Izinkan pop-up untuk menampilkan PDF.')
-      return
-    }
-    tab.opener = null
-    window.setTimeout(() => URL.revokeObjectURL(pendingPreview.url), 5 * 60_000)
-    setPendingPreview(null)
-    setMessage('PDF siap ditampilkan.')
+  const closePdfPreview = () => {
+    if (!pdfPreview) return
+    URL.revokeObjectURL(pdfPreview.url)
+    setPdfPreview(null)
   }
 
   const createInvoiceFrom = async (quotation) => {
@@ -1189,7 +1161,13 @@ function App() {
     {modal === 'document' && docForm && <DocumentModal document={docForm} setDocument={setDocForm} onClose={() => setModal(null)} onSave={saveDoc} onSaveDraft={() => saveDoc(null, true)} company={company} documents={documents} receipts={receipts} isExisting={documents.some((row) => row.id === docForm.id)} canEditPayment={profile.role === 'director'}/>}
     {modal === 'receipt' && receiptForm && <ReceiptModal receipt={receiptForm} setReceipt={setReceiptForm} documents={documents} receipts={receipts} baselines={company.numberBaselines} onClose={() => setModal(null)} onSave={saveReceiptForm} onSaveDraft={() => saveReceiptForm(null, true)} setMessage={setMessage}/>}
     {modal === 'settings' && (profile.role === 'director' ? <SettingsModal settings={settingsForm} setSettings={setSettingsForm} onClose={() => setModal(null)} onSave={saveCompanySettings}/> : <div className="toast">Hanya direktur yang dapat mengubah detail perusahaan.</div>)}
-    {message && <div className="toast" role="status"><span>{message}</span>{pendingPreview && <button className="button primary toast-action" onClick={openPendingPdf}>Buka PDF</button>}<button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
+    {pdfPreview && <div className="pdf-preview-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closePdfPreview() }}>
+      <section className="pdf-preview-modal" role="dialog" aria-modal="true" aria-label="Pratinjau PDF">
+        <header className="pdf-preview-head"><h2>Pratinjau PDF</h2><button type="button" className="icon-button" onClick={closePdfPreview} aria-label="Tutup pratinjau PDF"><Icon name="close"/></button></header>
+        <iframe className="pdf-preview-frame" src={pdfPreview.url} title="Pratinjau PDF" />
+      </section>
+    </div>}
+    {message && <div className="toast" role="status"><span>{message}</span><button onClick={() => setMessage('')} aria-label="Tutup"><Icon name="close"/></button></div>}
   </div>
 }
 
