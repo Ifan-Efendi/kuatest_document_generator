@@ -49,3 +49,17 @@ begin
   end if;
 end
 $$;
+
+-- Enable Realtime for company identity and filtered delete synchronization.
+alter table public.documents replica identity full;
+alter table public.receipts replica identity full;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'company_settings'
+  ) then
+    execute 'alter publication supabase_realtime add table public.company_settings';
+  end if;
+end
+$$;

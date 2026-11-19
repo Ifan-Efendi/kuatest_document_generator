@@ -355,6 +355,7 @@ function App() {
   const [recordsStatus, setRecordsStatus] = useState('loading')
   const [message, setMessage] = useState('')
   const sessionLoadRef = useRef(0)
+  const refreshSequenceRef = useRef(0)
   const activeWorkspaceRef = useRef(null)
   const savingReceiptRef = useRef(false)
   const [downloadingPdf, setDownloadingPdf] = useState(null)
@@ -381,7 +382,10 @@ function App() {
     writeWorkspaceCache(profile, documents, receipts)
   }, [recordsStatus, profile?.user_id, profile?.company_id, documents, receipts])
   const refresh = async (canPersistTagline = false) => {
+    const refreshId = ++refreshSequenceRef.current
+    const workspaceAtStart = activeWorkspaceRef.current
     const [savedDocuments, savedReceipts, savedCompany] = await Promise.all([getDocuments(), getReceipts(), getSettings()])
+    if (refreshId !== refreshSequenceRef.current || !workspaceAtStart || activeWorkspaceRef.current?.user_id !== workspaceAtStart.user_id || activeWorkspaceRef.current?.company_id !== workspaceAtStart.company_id) return
     setDocuments(savedDocuments.sort((a, b) => String(b.date).localeCompare(String(a.date))))
     setReceipts(savedReceipts.sort((a, b) => String(b.date).localeCompare(String(a.date))))
     const savedBaselines = savedCompany.numberBaselines || {}
@@ -525,14 +529,43 @@ function App() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'receipts', filter: `company_id=eq.${companyId}`,
       }, change => { if (active) applyChange(setReceipts, change) })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'company_settings', filter: `company_id=eq.${companyId}`,
+      }, change => {
+        if (!active) return
+        const applySettings = (settings) => {
+          if (!active) return
+          const mergedSettings = {
+            ...defaultCompany,
+            ...(settings || {}),
+            city: '',
+            numberBaselines: { ...defaultCompany.numberBaselines, ...(settings?.numberBaselines || {}) },
+          }
+          setCompany(mergedSettings)
+          if (modalRef.current !== 'settings') setSettingsForm(mergedSettings)
+        }
+        if (change.new?.payload) applySettings(change.new.payload)
+        else void getSettings().then(applySettings).catch((error) => console.error('Gagal menyinkronkan identitas perusahaan.', error))
+      })
       .subscribe((status, error) => {
+        if (active && status === 'SUBSCRIBED') {
+          void refresh().catch((refreshError) => console.error('Gagal menyinkronkan data setelah Realtime tersambung.', refreshError))
+        }
         if (active && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
           console.error('Supabase Realtime gagal tersambung.', error)
         }
       })
 
+    const syncWhenVisible = () => {
+      if (active && document.visibilityState === 'visible') {
+        void refresh().catch((error) => console.error('Gagal menyinkronkan data terbaru.', error))
+      }
+    }
+    document.addEventListener('visibilitychange', syncWhenVisible)
+
     return () => {
       active = false
+      document.removeEventListener('visibilitychange', syncWhenVisible)
       void supabase.removeChannel(channel)
     }
   }, [profile?.company_id, ready, user?.id])
