@@ -944,21 +944,33 @@ function App() {
       URL.revokeObjectURL(pendingPreview.url)
       setPendingPreview(null)
     }
+
+    // Open the tab directly in the click gesture. Mobile browsers may block
+    // window.open if it happens only after the PDF request has completed.
+    const previewTab = window.open('about:blank', '_blank')
+    if (previewTab) {
+      previewTab.opener = null
+      try {
+        previewTab.document.title = 'Menyiapkan PDF...'
+        previewTab.document.body.innerText = 'Menyiapkan PDF untuk ditampilkan...'
+      } catch { /* The browser may restrict access to the new tab document. */ }
+    }
+
     setViewingPdf(key)
-    setMessage('Menyiapkan PDF untuk ditampilkan…')
+    setMessage('Menyiapkan PDF untuk ditampilkan...')
     try {
       await waitForUiPaint()
       const url = page === 'receipt' ? await previewReceiptPdf(record) : await previewDocumentPdf(record)
-      const tab = window.open(url, '_blank')
-      if (tab) {
-        tab.opener = null
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      if (previewTab && !previewTab.closed) {
+        previewTab.location.replace(url)
+        window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000)
         setMessage('PDF siap ditampilkan.')
       } else {
         setPendingPreview({ key, url })
         setMessage('PDF siap. Klik Buka PDF untuk menampilkannya.')
       }
     } catch (error) {
+      if (previewTab && !previewTab.closed) previewTab.close()
       setMessage(error.message || 'PDF gagal dibuka. Coba lagi.')
     } finally {
       setViewingPdf(null)
@@ -979,7 +991,7 @@ function App() {
       return
     }
     tab.opener = null
-    window.setTimeout(() => URL.revokeObjectURL(pendingPreview.url), 60_000)
+    window.setTimeout(() => URL.revokeObjectURL(pendingPreview.url), 5 * 60_000)
     setPendingPreview(null)
     setMessage('PDF siap ditampilkan.')
   }
