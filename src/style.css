@@ -2584,8 +2584,6 @@ html .app-shell .sidebar .brand span {
 
 
 .auth-loading > p { display: flex; align-items: center; justify-content: center; gap: 9px; }
-.auth-bootstrap { display: grid; place-items: center; }
-.auth-bootstrap > img { width: min(220px, 58vw); height: auto; object-fit: contain; }
 .auth-loading > p .icon { width: 17px; height: 17px; animation: pdf-spinner .8s linear infinite; }
 
 .button.is-loading .icon { animation: pdf-spinner .8s linear infinite; }
