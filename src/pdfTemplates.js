@@ -1,4 +1,5 @@
 import { invoiceCss, quotationCss, receiptCss } from './pdfStyles.js'
+import { normalizeDocumentItems } from './documentData.js'
 
 const h = (value = '') => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character])
 const rupiah = (value) => Number(value || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -136,6 +137,7 @@ function agreementTerms(value, title) {
 }
 
 export function documentPdf(document, company, fileName = '') {
+  document = { ...document, items: normalizeDocumentItems(document.items ?? document.lineItems ?? document.products, 'pdf-item') }
   const invoice = document.type === 'invoice'
   const total = (document.items || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0) + Number(document.shippingFee || 0) - Number(document.discount || 0)
   const hasAdjustments = Number(document.shippingFee || 0) > 0 || Number(document.discount || 0) > 0 || Number(document.vatAmount || document.pph || 0) > 0 || Number(document.vatRate || document.pphRate || 0) > 0

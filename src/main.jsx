@@ -19,6 +19,7 @@ import {
   setWorkspace,
 } from './storage'
 import './style.css'
+import { docTotal, documentSubtotal, normalizeDocumentItems } from './documentData.js'
 
 const today = () => {
   const date = new Date()
@@ -271,14 +272,6 @@ const invoiceStatusValue = (status) => {
   if (status === 'DP 50%' || status === 'DP') return 'DP'
   if (status === 'Belum Lunas' || status === 'Belum Bayar' || status === 'Tagihan Penuh') return 'Tagihan Penuh'
   return invoiceStatuses.includes(status) ? status : 'Tagihan Penuh'
-}
-
-const docTotal = (document) => {
-  const subtotal = (document.items || []).reduce((sum, item) => sum + Number(item.total ?? Number(item.quantity || 0) * Number(item.price || 0)), 0)
-  const adjusted = Math.max(0, subtotal + Number(document.shippingFee || 0) - Number(document.discount || 0))
-  const rate = Number(document.vatRate || document.pphRate || 0)
-  const tax = rate > 0 ? adjusted * rate / 100 : Number(document.vatAmount ?? document.pph ?? 0)
-  return adjusted + tax
 }
 
 function newDocument(type, quotation = null, documents = [], receipts = [], baselines = {}) {
@@ -906,7 +899,8 @@ function App() {
   const editDocument = (document) => {
     const defaultPhone = '+62 895-3445-73716'
     const autoNumber = document.autoNumber || (!document.number ? numberFor(document.type, document.date, documents, receipts, company.numberBaselines) : '')
-    setDocForm({ ...document, number: document.number || autoNumber, autoNumber: document.autoNumber || autoNumber, dueDate: document.dueDate === addDaysToDate(document.date, 14) ? '' : document.dueDate || '', phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: (document.items || []).map((item) => ({ ...item })) })
+    const items = normalizeDocumentItems(document.items ?? document.lineItems ?? document.products, document.id)
+    setDocForm({ ...document, number: document.number || autoNumber, autoNumber: document.autoNumber || autoNumber, dueDate: document.dueDate === addDaysToDate(document.date, 14) ? '' : document.dueDate || '', phone: document.phone === defaultPhone ? '' : document.phone || '', paymentTerms: document.paymentTerms || defaultPaymentTerms, vatRate: document.vatRate ?? document.pphRate ?? 0, vatAmount: document.vatAmount ?? document.pph ?? 0, items: items.length ? items : [{ id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, total: 0, image: '' }] })
     setModal('document')
   }
 
@@ -1239,7 +1233,12 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
       items: (quotation.items || []).map((item) => ({ ...item, id: createId(), specification: String(item.specification || '').trim() || 'N/A' })),
     }))
   }
-  const updateItem = (id, key, value) => setDocument((state) => ({ ...state, items: state.items.map((item) => item.id === id ? { ...item, [key]: value } : item) }))
+  const updateItem = (id, key, value) => setDocument((state) => ({ ...state, items: state.items.map((item) => {
+    if (item.id !== id) return item
+    const updated = { ...item, [key]: value }
+    if (key === 'quantity' || key === 'price') updated.total = Math.round((Number(updated.quantity || 0) * Number(updated.price || 0) + Number.EPSILON) * 100) / 100
+    return updated
+  }) }))
   const addItem = () => setDocument((state) => ({ ...state, items: [...state.items, { id: createId(), name: '', specification: 'N/A', quantity: 1, unit: 'Unit', price: 0, image: '' }] }))
   const removeItem = (id) => setDocument((state) => ({ ...state, items: state.items.filter((item) => item.id !== id) }))
   const total = docTotal(document)
@@ -1295,7 +1294,7 @@ function DocumentModal({ document, setDocument, onClose, onSave, onSaveDraft, co
         </section>
 
         <section className="form-section"><h3>Perhitungan</h3><div className="form-grid">
-          <Field label="Subtotal barang"><output className="field-output">{money(document.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0))}</output></Field>
+          <Field label="Subtotal barang"><output className="field-output">{money(documentSubtotal(document.items))}</output></Field>
           <Field label="Ongkir"><AmountInput value={document.shippingFee || 0} onValueChange={(value) => set('shippingFee', value)} /></Field>
           <Field label="Diskon"><AmountInput value={document.discount || 0} onValueChange={(value) => set('discount', value)} /></Field>
           {document.type === 'quotation' && <Field label="PPN (%)"><input type="number" min="0" step="0.01" value={document.vatRate || 0} onChange={(event) => set('vatRate', event.target.value)} /></Field>}
