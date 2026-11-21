@@ -353,6 +353,7 @@ function App() {
   const [message, setMessage] = useState('')
   const sessionLoadRef = useRef(0)
   const refreshSequenceRef = useRef(0)
+  const refreshInFlightRef = useRef(null)
   const settingsRefreshRef = useRef(0)
   const activeWorkspaceRef = useRef(null)
   const savingReceiptRef = useRef(false)
@@ -379,10 +380,25 @@ function App() {
     if (recordsStatus !== 'ready' || !profile?.user_id || !profile?.company_id) return
     writeWorkspaceCache(profile, documents, receipts)
   }, [recordsStatus, profile?.user_id, profile?.company_id, documents, receipts])
-  const refresh = async (canPersistTagline = false) => {
+  const refresh = async (canPersistTagline = false, bypassDeduplication = false) => {
+    const workspaceAtStart = activeWorkspaceRef.current
+    if (!bypassDeduplication && workspaceAtStart) {
+      const existingRefresh = refreshInFlightRef.current
+      if (existingRefresh?.user_id === workspaceAtStart.user_id && existingRefresh?.company_id === workspaceAtStart.company_id) {
+        return existingRefresh.promise
+      }
+
+      const promise = refresh(canPersistTagline, true)
+      const refreshFlight = { user_id: workspaceAtStart.user_id, company_id: workspaceAtStart.company_id, promise }
+      refreshInFlightRef.current = refreshFlight
+      try {
+        return await promise
+      } finally {
+        if (refreshInFlightRef.current === refreshFlight) refreshInFlightRef.current = null
+      }
+    }
     const refreshId = ++refreshSequenceRef.current
     const settingsRefreshId = ++settingsRefreshRef.current
-    const workspaceAtStart = activeWorkspaceRef.current
     const settingsPromise = getSettings().then(
       (value) => ({ value }),
       (error) => ({ error }),
