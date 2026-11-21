@@ -43,7 +43,7 @@ export async function renderPdfPayload(payload, launchOptions) {
     await page.waitForFunction(() => Array.from(document.images).every((image) => image.complete), { timeout: 5_000 }).catch(() => {})
     return await page.pdf({
       format: 'A4',
-      margin: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
+      margin: { top: '15mm', right: '15mm', bottom: '20mm', left: '15mm' },
       printBackground: true,
     })
   } finally {
