@@ -7,7 +7,7 @@ const qty = (value) => Number(value || 0).toLocaleString('id-ID', { maximumFract
 const dateLong = (value) => value ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`)) : '-'
 const companyName = (value) => String(value || '').replace(/Megatama/gi, 'Mega Tama')
 const cssString = (value) => `"${Array.from(String(value ?? ''), (character) => /[\\"<>\r\n]/.test(character) ? `\\${character.codePointAt(0).toString(16)} ` : character).join('')}"`
-const footerPageCss = (address) => `@page { @bottom-center { content: ${cssString(`Office : ${address || ''}`)}; width: 210mm; height: 20mm; background: linear-gradient(to bottom, transparent 40%, #1f4e79 40%); color: #fff; font: 700 10.5pt Arial, Helvetica, sans-serif; text-align: center; padding: 0 5mm 4mm; box-sizing: border-box; vertical-align: bottom; white-space: normal; } }`
+const footerPageCss = (address) => `@page { @bottom-center { content: ${cssString(`Office : ${address || ''}`)}; width: 210mm; height: 20mm; background: linear-gradient(to bottom, transparent 40%, #1f4e79 40%); color: #fff; font: 700 10.5pt Arial, Helvetica, sans-serif; text-align: center; padding: 4mm 5mm 0; box-sizing: border-box; vertical-align: bottom; white-space: normal; } }`
 const cssDocument = (css, footerAddress = null) => `<style>${css}${footerAddress === null ? '' : footerPageCss(footerAddress)}
   .company-rule { display: block; width: 100%; height: 1.1mm; position: relative; margin: 4mm 0 3mm; flex: 0 0 auto; }
   .company-rule span { display: block; position: absolute; left: 0; right: 0; border-top: 0.2mm solid #111; }
