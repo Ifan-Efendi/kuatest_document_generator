@@ -2984,6 +2984,15 @@ html .app-shell .sidebar .brand span {
 }
 
 .cache-state { color: #758197; font-size: 11px; font-weight: 500; }
+.records-sync-notice { display: flex; align-items: center; justify-content: center; gap: 9px; margin: -8px 14px 12px; padding: 9px 12px; border: 1px solid #d8e5f5; border-radius: 9px; background: #f3f7fd; color: #355779; font-size: 12px; line-height: 1.4; text-align: center; }
+.records-sync-notice > .icon { width: 15px; height: 15px; flex: 0 0 auto; animation: pdf-spinner .8s linear infinite; }
+.records-sync-notice.is-error { justify-content: space-between; border-color: #f0d6a2; background: #fff9eb; color: #72531a; text-align: left; }
+.records-sync-notice .button { min-height: 30px; flex: 0 0 auto; padding: 0 11px; font-size: 12px; }
+@media (max-width: 680px) {
+  .records-sync-notice { align-items: flex-start; margin: 0 10px 10px; text-align: left; }
+  .records-sync-notice.is-error { flex-direction: column; align-items: stretch; }
+  .records-sync-notice .button { align-self: flex-start; }
+}
 
 
 .pdf-preview-backdrop {
