@@ -97,9 +97,14 @@ const pdfFileName = (type, number, companyName) => {
   return `${title} ${safeFilePart(sequence, 'TANPA-NOMOR')} - ${safeFilePart(companyName, 'TANPA-NAMA')}.pdf`
 }
 
-const workspaceCachePrefix = 'kuatest:workspace:v2:'
+const workspaceCachePrefix = 'kuatest:workspace:v3:'
+const legacyWorkspaceCachePrefix = 'kuatest:workspace:v2:'
 const workspaceCacheTtl = 5 * 60 * 1000
 const workspaceCacheKey = (profile) => `${workspaceCachePrefix}${encodeURIComponent(profile.user_id)}:${encodeURIComponent(profile.company_id)}`
+const legacyWorkspaceCacheKey = (profile) => `${legacyWorkspaceCachePrefix}${encodeURIComponent(profile.user_id)}:${encodeURIComponent(profile.company_id)}`
+const workspaceCacheDatabase = 'kuatest-browser-cache'
+const workspaceCacheStore = 'workspaces'
+let workspaceCacheDatabasePromise
 const cacheRecord = (record, includeImages = true) => ({
   ...record,
   items: (record.items || []).map((item) => {
@@ -113,48 +118,94 @@ const validCachedRecords = (records, documents = false) => records.every((record
   (!documents || ['quotation', 'invoice'].includes(record.type)) &&
   (record.items === undefined || (Array.isArray(record.items) && record.items.every((item) => item && typeof item === 'object')))
 )
-function readWorkspaceCache(profile) {
+function openWorkspaceCacheDatabase() {
+  if (typeof indexedDB === 'undefined') return Promise.reject(new Error('IndexedDB tidak tersedia.'))
+  if (!workspaceCacheDatabasePromise) {
+    workspaceCacheDatabasePromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(workspaceCacheDatabase, 1)
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(workspaceCacheStore)) request.result.createObjectStore(workspaceCacheStore, { keyPath: 'key' })
+      }
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error || new Error('Cache browser gagal dibuka.'))
+      request.onblocked = () => reject(new Error('Cache browser sedang digunakan tab lain.'))
+    }).catch((error) => {
+      workspaceCacheDatabasePromise = null
+      throw error
+    })
+  }
+  return workspaceCacheDatabasePromise
+}
+function runWorkspaceCacheRequest(mode, operation) {
+  return openWorkspaceCacheDatabase().then((database) => new Promise((resolve, reject) => {
+    const transaction = database.transaction(workspaceCacheStore, mode)
+    const request = operation(transaction.objectStore(workspaceCacheStore))
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error || new Error('Cache browser gagal diakses.'))
+    transaction.onabort = () => reject(transaction.error || new Error('Penyimpanan cache dibatalkan.'))
+  }))
+}
+function validateWorkspaceCache(cache, profile) {
+  const age = Date.now() - Number(cache?.savedAt)
+  if (cache?.version !== 3 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) return null
+  return { ...cache, stale: age > workspaceCacheTtl }
+}
+async function readWorkspaceCache(profile) {
   const key = workspaceCacheKey(profile)
   try {
-    const value = sessionStorage.getItem(key)
-    if (!value) return null
-    const cache = JSON.parse(value)
-    const age = Date.now() - Number(cache.savedAt)
-    if (cache.version !== 2 || cache.userId !== profile.user_id || cache.companyId !== profile.company_id || !Number.isFinite(age) || age < 0 || !Array.isArray(cache.documents) || !Array.isArray(cache.receipts) || !validCachedRecords(cache.documents, true) || !validCachedRecords(cache.receipts)) {
-      sessionStorage.removeItem(key)
-      return null
-    }
-    return { ...cache, stale: age > workspaceCacheTtl }
-  } catch {
-    try { sessionStorage.removeItem(key) } catch { /* session storage can be unavailable */ }
-    return null
-  }
+    const stored = await runWorkspaceCacheRequest('readonly', (store) => store.get(key))
+    const valid = validateWorkspaceCache(stored, profile)
+    if (valid) return valid
+    if (stored) await runWorkspaceCacheRequest('readwrite', (store) => store.delete(key))
+  } catch { /* continue with migration from the previous browser cache */ }
+
+  try {
+    const oldKey = legacyWorkspaceCacheKey(profile)
+    const legacy = sessionStorage.getItem(oldKey)
+    if (!legacy) return null
+    const parsed = JSON.parse(legacy)
+    const migrated = validateWorkspaceCache({ ...parsed, version: 3 }, profile)
+    if (!migrated) return null
+    const { stale, ...cacheToStore } = migrated
+    await runWorkspaceCacheRequest('readwrite', (store) => store.put({ ...cacheToStore, key }))
+    sessionStorage.removeItem(oldKey)
+    return migrated
+  } catch { return null }
 }
-function writeWorkspaceCache(profile, documents, receipts) {
+async function writeWorkspaceCache(profile, documents, receipts) {
   if (!profile?.user_id || !profile?.company_id) return
   const key = workspaceCacheKey(profile)
-  const createValue = (includeImages) => JSON.stringify({
-    version: 2, userId: profile.user_id, companyId: profile.company_id, savedAt: Date.now(),
+  const createCache = (includeImages) => ({
+    key, version: 3, userId: profile.user_id, companyId: profile.company_id, savedAt: Date.now(),
     documents: documents.map((record) => cacheRecord(record, includeImages)),
     receipts: receipts.map((record) => cacheRecord(record, includeImages)),
   })
   try {
-    let value = createValue(true)
-    if (value.length > 1_500_000) value = createValue(false)
-    if (value.length > 1_500_000) {
-      sessionStorage.removeItem(key)
-      return
-    }
-    sessionStorage.setItem(key, value)
+    await runWorkspaceCacheRequest('readwrite', (store) => store.put(createCache(true)))
   } catch {
-    try { sessionStorage.removeItem(key) } catch { /* session storage can be unavailable */ }
+    try { await runWorkspaceCacheRequest('readwrite', (store) => store.put(createCache(false))) } catch { /* remote data remains authoritative */ }
   }
 }
-function clearWorkspaceCaches(keepKey = null) {
+async function clearWorkspaceCaches(keepKey = null) {
+  try {
+    const keys = await runWorkspaceCacheRequest('readonly', (store) => store.getAllKeys())
+    const obsoleteKeys = keys.filter((key) => typeof key === 'string' && key.startsWith('kuatest:workspace:') && key !== keepKey)
+    if (obsoleteKeys.length) {
+      const database = await openWorkspaceCacheDatabase()
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction(workspaceCacheStore, 'readwrite')
+        const store = transaction.objectStore(workspaceCacheStore)
+        obsoleteKeys.forEach((key) => store.delete(key))
+        transaction.oncomplete = resolve
+        transaction.onerror = () => reject(transaction.error || new Error('Cache browser gagal dibersihkan.'))
+        transaction.onabort = () => reject(transaction.error || new Error('Pembersihan cache dibatalkan.'))
+      })
+    }
+  } catch { /* browser cache cleanup is best effort */ }
   try {
     for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
       const key = sessionStorage.key(index)
-      if ((key?.startsWith(workspaceCachePrefix) || key?.startsWith('kuatest:workspace:v1:')) && key !== keepKey) sessionStorage.removeItem(key)
+      if ((key?.startsWith(workspaceCachePrefix) || key?.startsWith(legacyWorkspaceCachePrefix) || key?.startsWith('kuatest:workspace:v1:')) && key !== keepKey) sessionStorage.removeItem(key)
     }
   } catch { /* session storage can be unavailable */ }
 }
@@ -490,7 +541,6 @@ function App() {
         setReceipts([])
         activeWorkspaceRef.current = null
         synchronizedWorkspaceRef.current = null
-        clearWorkspaceCaches()
       }
       setUser(nextUser)
       if (!nextUser) {
@@ -500,7 +550,6 @@ function App() {
         setReceipts([])
         activeWorkspaceRef.current = null
         synchronizedWorkspaceRef.current = null
-        clearWorkspaceCaches()
         setRecordsStatus('idle')
         setReady(true)
         return
@@ -519,8 +568,8 @@ function App() {
         }
         setWorkspace(nextProfile); setProfile(nextProfile)
         activeWorkspaceRef.current = nextProfile
-        cachedWorkspace = readWorkspaceCache(nextProfile)
-        clearWorkspaceCaches(workspaceCacheKey(nextProfile))
+        cachedWorkspace = await readWorkspaceCache(nextProfile)
+        await clearWorkspaceCaches(workspaceCacheKey(nextProfile))
         if (cachedWorkspace && !workspaceAlreadySynced) {
           setDocuments(cachedWorkspace.documents)
           setReceipts(cachedWorkspace.receipts)
@@ -678,7 +727,6 @@ function App() {
     setReceipts([])
     activeWorkspaceRef.current = null
     synchronizedWorkspaceRef.current = null
-    clearWorkspaceCaches()
     setRecordsStatus('idle')
     setReady(true)
     sessionLoadRef.current += 1
