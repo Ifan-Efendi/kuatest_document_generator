@@ -158,7 +158,7 @@ export function documentPdf(document, company, fileName = '') {
         <thead><tr><th>No</th><th>Deskripsi</th><th>Jumlah</th><th>Satuan</th><th>Harga</th><th>Total</th></tr></thead><tbody>${invoiceRows(document)}</tbody></table>
       ${invoiceTerms}
       <div class="signatures"><div class="signature"><div>${company.city ? `${h(company.city)}, ` : ''}${dateLong(document.date)}</div><div>Hormat kami,</div><div class="signature-art">${signImages(company, document)}</div><div class="signatory-name">${h(company.invoice_signatory_name || company.name)}</div><div>Finance</div></div></div>
-      <footer class="footer">Office : ${h(company.address)}</footer></section>${equipmentPages(document)}`
+      </section><footer class="footer">Office : ${h(company.address)}</footer>${equipmentPages(document)}`
     : `<section class="document-page${hasAdjustments ? ' has-adjustments' : ''}">${header(company, company.logo)}
       <h1>QUOTATION</h1>
       <table class="recipient"><colgroup><col style="width:14%"><col style="width:1%"><col style="width:31%"><col style="width:2%"><col style="width:10%"><col style="width:1%"><col style="width:41%"></colgroup>
@@ -173,7 +173,7 @@ export function documentPdf(document, company, fileName = '') {
       <p class="closing">Demikian penawaran ini kami sampaikan. Atas kepercayaan dan kerjasamanya yang baik kami ucapkan terimakasih</p>
       <div class="signatures"><div class="signature"><div class="signature-title">Hormat kami,</div><div class="signature-art">${signImages(company, document)}</div><div class="signatory-space"></div><div class="signatory-name">${h(company.signatory_name || company.name)}</div></div>
       <div class="signature"><div class="signature-title">Konfirmasi Persetujuan Customer</div><div class="customer-sign-space"></div><div class="customer-signatory-line">(..................................)</div><div class="signature-note">Note : Mohon ditanda tangan, stempel / Email jika disetujui atau kirim PO.</div></div></div>
-      <footer class="footer">Office : ${h(company.address)}</footer></section>${equipmentPages(document)}`
+      </section><footer class="footer">Office : ${h(company.address)}</footer>${equipmentPages(document)}`
 
   const pdfTitle = fileName || `${document.number}.pdf`
   return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(invoice ? invoiceCss : quotationCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
