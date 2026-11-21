@@ -354,6 +354,7 @@ function App() {
   const sessionLoadRef = useRef(0)
   const refreshSequenceRef = useRef(0)
   const refreshInFlightRef = useRef(null)
+  const synchronizedWorkspaceRef = useRef(null)
   const settingsRefreshRef = useRef(0)
   const activeWorkspaceRef = useRef(null)
   const savingReceiptRef = useRef(false)
@@ -421,6 +422,7 @@ function App() {
     if (dataErrors.length) throw new Error(dataErrors.join(' '))
     setRecordsError('')
     setRecordsStatus('ready')
+    synchronizedWorkspaceRef.current = { user_id: workspaceAtStart.user_id, company_id: workspaceAtStart.company_id }
 
     // Company settings update independently so a slow settings request cannot
     // keep document rows, totals, and actions in the loading state.
@@ -487,6 +489,7 @@ function App() {
         setDocuments([])
         setReceipts([])
         activeWorkspaceRef.current = null
+        synchronizedWorkspaceRef.current = null
         clearWorkspaceCaches()
       }
       setUser(nextUser)
@@ -496,38 +499,46 @@ function App() {
         setDocuments([])
         setReceipts([])
         activeWorkspaceRef.current = null
+        synchronizedWorkspaceRef.current = null
         clearWorkspaceCaches()
         setRecordsStatus('idle')
         setReady(true)
         return
       }
-      setRecordsStatus('loading')
+      if (synchronizedWorkspaceRef.current?.user_id !== nextUser.id) setRecordsStatus('loading')
       let cachedWorkspace = null
       try {
         const nextProfile = await loadProfile(nextUser.id)
         if (!active || loadId !== sessionLoadRef.current) return
+        const workspaceAlreadySynced = synchronizedWorkspaceRef.current?.user_id === nextProfile.user_id && synchronizedWorkspaceRef.current?.company_id === nextProfile.company_id
         if (activeWorkspaceRef.current && (activeWorkspaceRef.current.user_id !== nextProfile.user_id || activeWorkspaceRef.current.company_id !== nextProfile.company_id)) {
           setDocuments([])
           setReceipts([])
+          synchronizedWorkspaceRef.current = null
+          setRecordsStatus('loading')
         }
         setWorkspace(nextProfile); setProfile(nextProfile)
         activeWorkspaceRef.current = nextProfile
         cachedWorkspace = readWorkspaceCache(nextProfile)
         clearWorkspaceCaches(workspaceCacheKey(nextProfile))
-        if (cachedWorkspace) {
+        if (cachedWorkspace && !workspaceAlreadySynced) {
           setDocuments(cachedWorkspace.documents)
           setReceipts(cachedWorkspace.receipts)
           setRecordsStatus('cached')
         }
-        // Authentication and role are ready; render the app shell while
-        // document queries continue in the background.
+        // Keep an already synchronized workspace interactive while refreshing the same session.
         setReady(true)
+        if (workspaceAlreadySynced) {
+          setRecordsError('')
+          return
+        }
         await refresh(nextProfile.role === 'director')
         if (!active || loadId !== sessionLoadRef.current) return
         setRecordsStatus('ready')
       } catch (error) {
         if (active && loadId === sessionLoadRef.current) {
-          setRecordsStatus(cachedWorkspace ? 'cached-error' : 'error')
+          const keepSynchronizedWorkspace = synchronizedWorkspaceRef.current?.user_id === nextUser.id && activeWorkspaceRef.current?.user_id === nextUser.id && activeWorkspaceRef.current?.company_id === synchronizedWorkspaceRef.current?.company_id
+          if (!keepSynchronizedWorkspace) setRecordsStatus(cachedWorkspace ? 'cached-error' : 'error')
           setRecordsError(error.message || 'Data gagal dimuat.')
           setMessage(error.message)
           setReady(true)
@@ -666,6 +677,7 @@ function App() {
     setDocuments([])
     setReceipts([])
     activeWorkspaceRef.current = null
+    synchronizedWorkspaceRef.current = null
     clearWorkspaceCaches()
     setRecordsStatus('idle')
     setReady(true)
