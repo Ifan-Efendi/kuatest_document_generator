@@ -6,7 +6,9 @@ const rupiah = (value) => Number(value || 0).toLocaleString('id-ID', { minimumFr
 const qty = (value) => Number(value || 0).toLocaleString('id-ID', { maximumFractionDigits: 2 })
 const dateLong = (value) => value ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`)) : '-'
 const companyName = (value) => String(value || '').replace(/Megatama/gi, 'Mega Tama')
-const cssDocument = (css) => `<style>${css}
+const cssString = (value) => `"${Array.from(String(value ?? ''), (character) => /[\\"<>\r\n]/.test(character) ? `\\${character.codePointAt(0).toString(16)} ` : character).join('')}"`
+const footerPageCss = (address) => `@page { @bottom-center { content: ${cssString(`Office : ${address || ''}`)}; width: 210mm; height: 20mm; background: linear-gradient(to bottom, transparent 40%, #1f4e79 40%); color: #fff; font: 700 10.5pt Arial, Helvetica, sans-serif; text-align: center; padding: 0 5mm 4mm; box-sizing: border-box; vertical-align: bottom; white-space: normal; } }`
+const cssDocument = (css, footerAddress = null) => `<style>${css}${footerAddress === null ? '' : footerPageCss(footerAddress)}
   .company-rule { display: block; width: 100%; height: 1.1mm; position: relative; margin: 4mm 0 3mm; flex: 0 0 auto; }
   .company-rule span { display: block; position: absolute; left: 0; right: 0; border-top: 0.2mm solid #111; }
   .company-rule span:nth-child(1) { top: 0; }
@@ -158,7 +160,7 @@ export function documentPdf(document, company, fileName = '') {
         <thead><tr><th>No</th><th>Deskripsi</th><th>Jumlah</th><th>Satuan</th><th>Harga</th><th>Total</th></tr></thead><tbody>${invoiceRows(document)}</tbody></table>
       ${invoiceTerms}
       <div class="signatures"><div class="signature"><div>${company.city ? `${h(company.city)}, ` : ''}${dateLong(document.date)}</div><div>Hormat kami,</div><div class="signature-art">${signImages(company, document)}</div><div class="signatory-name">${h(company.invoice_signatory_name || company.name)}</div><div>Finance</div></div></div>
-      </section><footer class="footer">Office : ${h(company.address)}</footer>${equipmentPages(document)}`
+      </section>${equipmentPages(document)}`
     : `<section class="document-page${hasAdjustments ? ' has-adjustments' : ''}">${header(company, company.logo)}
       <h1>QUOTATION</h1>
       <table class="recipient"><colgroup><col style="width:14%"><col style="width:1%"><col style="width:31%"><col style="width:2%"><col style="width:10%"><col style="width:1%"><col style="width:41%"></colgroup>
@@ -173,10 +175,10 @@ export function documentPdf(document, company, fileName = '') {
       <p class="closing">Demikian penawaran ini kami sampaikan. Atas kepercayaan dan kerjasamanya yang baik kami ucapkan terimakasih</p>
       <div class="signatures"><div class="signature"><div class="signature-title">Hormat kami,</div><div class="signature-art">${signImages(company, document)}</div><div class="signatory-space"></div><div class="signatory-name">${h(company.signatory_name || company.name)}</div></div>
       <div class="signature"><div class="signature-title">Konfirmasi Persetujuan Customer</div><div class="customer-sign-space"></div><div class="customer-signatory-line">(..................................)</div><div class="signature-note">Note : Mohon ditanda tangan, stempel / Email jika disetujui atau kirim PO.</div></div></div>
-      </section><footer class="footer">Office : ${h(company.address)}</footer>${equipmentPages(document)}`
+      </section>${equipmentPages(document)}`
 
   const pdfTitle = fileName || `${document.number}.pdf`
-  return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(invoice ? invoiceCss : quotationCss)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8">${cssDocument(invoice ? invoiceCss : quotationCss, company.address)}<title>${h(pdfTitle)}</title></head><body>${body}</body></html>`
 }
 
 const words = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas']
